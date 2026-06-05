@@ -5878,6 +5878,14 @@ func TestRunStackChanProductRecoveryRequiresROMDownloadWhenOfflineWithSerial(t *
 	if err := os.WriteFile(serialPort, []byte{}, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	flashLog := filepath.Join(tempDir, "a21-official-xiaozhi-compatible-flash-20260605-074141.log")
+	if err := os.WriteFile(flashLog, []byte(`Waiting for ESP32-S3 ROM download mode on `+serialPort+`
+Timed out waiting for ESP32-S3 ROM download mode; hold BOOT, press/release RESET, keep holding BOOT, then retry.
+Last esptool probe output:
+A fatal error occurred: Failed to connect to ESP32-S3: No serial data received.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	writeProductReadinessReportFixtureFile(t, reportsDir, "a21-stackchan-official-xiaozhi-compatible-flash-20260605-074215-1780616535711678000.json", `{
   "schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1",
   "status": "failed",
@@ -5887,7 +5895,7 @@ func TestRunStackChanProductRecoveryRequiresROMDownloadWhenOfflineWithSerial(t *
   "esptool_before": "no_reset",
   "wait_rom_download_mode": true,
   "wait_rom_timeout_seconds": 30,
-  "flash_log_file": "a21-official-xiaozhi-compatible-flash-20260605-074141.log",
+  "flash_log_file": "`+flashLog+`",
   "findings": [{"code": "flash_execute_failed", "message": "exit status 1"}]
 }`)
 
@@ -5921,6 +5929,12 @@ func TestRunStackChanProductRecoveryRequiresROMDownloadWhenOfflineWithSerial(t *
 	}
 	if report.LatestProductFlash == nil || report.LatestProductFlash.FlashExecuted {
 		t.Fatalf("latest flash = %+v, want failed no-write report", report.LatestProductFlash)
+	}
+	if !report.LatestProductFlash.FlashLogEvidence.Found || !report.LatestProductFlash.FlashLogEvidence.ROMNoSerialData {
+		t.Fatalf("flash log evidence = %+v, want no-serial ROM evidence", report.LatestProductFlash.FlashLogEvidence)
+	}
+	if !containsString(reportFindingCodes(report.Findings), "rom_probe_no_serial_data") {
+		t.Fatalf("findings missing rom_probe_no_serial_data: %+v", report.Findings)
 	}
 	if !containsString(report.NextActions, "enter_esp32s3_rom_download_mode") {
 		t.Fatalf("next actions missing ROM action: %+v", report.NextActions)
@@ -6026,6 +6040,29 @@ func TestRunStackChanProductRecoveryReadyWhenOnlineAndOfficialRelayConnected(t *
 	if report.ROMDownloadRequired {
 		t.Fatalf("ROMDownloadRequired = true, want false")
 	}
+}
+
+func TestRunStackChanProductRecoveryRejectsInvalidDirectSourceIP(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-product-recovery",
+		"--direct-source-ip", "not-an-ip",
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--direct-source-ip must be a valid IP address") {
+		t.Fatalf("stderr missing direct-source validation: %s", stderr.String())
+	}
+}
+
+func reportFindingCodes(findings []stackChanProductRecoveryFinding) []string {
+	codes := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		codes = append(codes, finding.Code)
+	}
+	return codes
 }
 
 func TestRunNamespaceAuditReadsTrackedFiles(t *testing.T) {

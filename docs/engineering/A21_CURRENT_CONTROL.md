@@ -108,6 +108,18 @@ transition:
   stackchan-product-recovery --help` exposes the new command. Loopback
   official status still reports `connected=false` and `/v1/devices` still
   reports `devices=[]`.
+- 2026-06-05 08:03 CST enhancement: `product-recovery` now accepts
+  `--direct-source-ip` and records it in the report, so TUN-safe public Gateway
+  checks do not depend on ambient shell environment. It also reads the latest
+  guarded flash log and extracts ROM evidence including timeout,
+  `rom_no_serial_data`, ESP32-S3 detection, last esptool error, and the
+  recovery hint.
+- Live run with `--direct-source-ip 192.168.1.27` wrote
+  `reports/a21-stackchan-product-recovery-20260605-080244.json`. Gateway
+  checks succeeded, `official_relay.checked=true`, `official_relay.connected=false`,
+  and `/v1/devices` returned zero devices. The latest flash log evidence is
+  `rom_probe_timed_out=true`, `rom_no_serial_data=true`, and
+  `LastError="A fatal error occurred: Failed to connect to ESP32-S3: No serial data received."`.
 - Next physical action remains unchanged: put the product StackChan into true
   ESP32-S3 ROM/download mode, rerun the guarded wait-ROM official-compatible
   product flash if needed, then verify product Xiaozhi, official

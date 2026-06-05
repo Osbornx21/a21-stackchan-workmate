@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,12 +16,13 @@ import (
 )
 
 type stackChanProductRecoveryOptions struct {
-	GatewayURL string
-	DeviceID   string
-	UploadPort string
-	SerialGlob string
-	ReportsDir string
-	OutputDir  string
+	GatewayURL     string
+	DeviceID       string
+	UploadPort     string
+	SerialGlob     string
+	ReportsDir     string
+	OutputDir      string
+	DirectSourceIP string
 }
 
 type stackChanProductRecoveryReport struct {
@@ -28,6 +30,7 @@ type stackChanProductRecoveryReport struct {
 	GeneratedAtMS       int64                                 `json:"generated_at_ms"`
 	Status              string                                `json:"status"`
 	GatewayURL          string                                `json:"gateway_url"`
+	DirectSourceIP      string                                `json:"direct_source_ip,omitempty"`
 	DeviceID            string                                `json:"device_id"`
 	DeviceOnline        bool                                  `json:"device_online"`
 	DeviceCount         int                                   `json:"device_count"`
@@ -65,8 +68,21 @@ type stackChanProductRecoveryFlashReport struct {
 	EsptoolBefore       string                                 `json:"esptool_before,omitempty"`
 	WaitROMDownloadMode bool                                   `json:"wait_rom_download_mode"`
 	WaitROMTimeoutSec   int                                    `json:"wait_rom_timeout_seconds,omitempty"`
+	BuildDirName        string                                 `json:"build_dir_name,omitempty"`
 	FlashLogFile        string                                 `json:"flash_log_file,omitempty"`
+	FlashLogEvidence    stackChanProductRecoveryFlashLog       `json:"flash_log_evidence,omitempty"`
 	Findings            []stackChanProductRecoveryFlashFinding `json:"findings,omitempty"`
+}
+
+type stackChanProductRecoveryFlashLog struct {
+	Checked          bool   `json:"checked"`
+	Found            bool   `json:"found"`
+	Path             string `json:"path,omitempty"`
+	ROMProbeTimedOut bool   `json:"rom_probe_timed_out,omitempty"`
+	ROMNoSerialData  bool   `json:"rom_no_serial_data,omitempty"`
+	ESP32S3Detected  bool   `json:"esp32s3_detected,omitempty"`
+	LastError        string `json:"last_error,omitempty"`
+	RecoveryHint     string `json:"recovery_hint,omitempty"`
 }
 
 type stackChanProductRecoveryFlashFinding struct {
@@ -82,17 +98,18 @@ type stackChanProductRecoveryFinding struct {
 
 func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanProductRecoveryOptions{
-		GatewayURL: firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
-		DeviceID:   firstNonEmpty(strings.TrimSpace(os.Getenv("A21_PRODUCT_DEVICE_ID")), "44:1b:f6:e2:6a:60"),
-		UploadPort: firstNonEmpty(strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")), "/dev/cu.usbmodem1101"),
-		SerialGlob: "/dev/cu.usbmodem*",
-		ReportsDir: "reports",
-		OutputDir:  "reports",
+		GatewayURL:     firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
+		DeviceID:       firstNonEmpty(strings.TrimSpace(os.Getenv("A21_PRODUCT_DEVICE_ID")), "44:1b:f6:e2:6a:60"),
+		UploadPort:     firstNonEmpty(strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")), "/dev/cu.usbmodem1101"),
+		SerialGlob:     "/dev/cu.usbmodem*",
+		ReportsDir:     "reports",
+		OutputDir:      "reports",
+		DirectSourceIP: strings.TrimSpace(os.Getenv(a21DirectSourceIPEnv)),
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-accept --check product-recovery [--gateway-url http://47.103.57.217] [--device-id 44:1b:f6:e2:6a:60] [--upload-port /dev/cu.usbmodem1101] [--serial-glob '/dev/cu.usbmodem*'] [--reports-dir reports] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check product-recovery [--gateway-url http://47.103.57.217] [--device-id 44:1b:f6:e2:6a:60] [--direct-source-ip 192.168.1.20] [--upload-port /dev/cu.usbmodem1101] [--serial-glob '/dev/cu.usbmodem*'] [--reports-dir reports] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -108,6 +125,13 @@ func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writ
 			}
 			i++
 			options.DeviceID = args[i]
+		case "--direct-source-ip":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--direct-source-ip requires a value")
+				return 2
+			}
+			i++
+			options.DirectSourceIP = args[i]
 		case "--upload-port":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--upload-port requires a value")
@@ -141,6 +165,11 @@ func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writ
 			return 2
 		}
 	}
+	options.DirectSourceIP = strings.TrimSpace(options.DirectSourceIP)
+	if options.DirectSourceIP != "" && net.ParseIP(options.DirectSourceIP) == nil {
+		fmt.Fprintln(stderr, "--direct-source-ip must be a valid IP address")
+		return 2
+	}
 	if err := validateA21ReportDir(options.ReportsDir); err != nil {
 		fmt.Fprintf(stderr, "product recovery reports dir invalid: %v\n", err)
 		return 1
@@ -165,10 +194,11 @@ func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writ
 
 func buildStackChanProductRecoveryReport(options stackChanProductRecoveryOptions) stackChanProductRecoveryReport {
 	report := stackChanProductRecoveryReport{
-		SchemaVersion: "a21.stackchan_product_recovery.v1",
-		GeneratedAtMS: time.Now().UnixMilli(),
-		DeviceID:      strings.TrimSpace(options.DeviceID),
-		Serial:        stackChanProductRecoverySerial{UploadPort: strings.TrimSpace(options.UploadPort), SerialGlob: strings.TrimSpace(options.SerialGlob)},
+		SchemaVersion:  "a21.stackchan_product_recovery.v1",
+		GeneratedAtMS:  time.Now().UnixMilli(),
+		DeviceID:       strings.TrimSpace(options.DeviceID),
+		DirectSourceIP: strings.TrimSpace(options.DirectSourceIP),
+		Serial:         stackChanProductRecoverySerial{UploadPort: strings.TrimSpace(options.UploadPort), SerialGlob: strings.TrimSpace(options.SerialGlob)},
 	}
 	_, safeGatewayURL, err := firmwareGatewayEndpoint(options.GatewayURL, "", nil)
 	if err != nil {
@@ -177,7 +207,7 @@ func buildStackChanProductRecoveryReport(options stackChanProductRecoveryOptions
 	} else {
 		report.GatewayURL = safeGatewayURL
 	}
-	deviceReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
+	deviceReport, err := fetchStackChanProductRecoveryDeviceReport(options)
 	if err != nil {
 		report.Findings = append(report.Findings, stackChanProductRecoveryFinding{Code: "gateway_devices_unavailable", Message: err.Error()})
 	} else {
@@ -194,25 +224,70 @@ func buildStackChanProductRecoveryReport(options stackChanProductRecoveryOptions
 			report.Findings = append(report.Findings, stackChanProductRecoveryFinding{Code: "product_device_not_online", Message: "product device is absent from Gateway registry", Detail: report.DeviceID})
 		}
 	}
-	report.OfficialRelay = fetchStackChanProductRecoveryOfficialStatus(options.GatewayURL, report.DeviceID)
+	report.OfficialRelay = fetchStackChanProductRecoveryOfficialStatusWithSource(options.GatewayURL, report.DeviceID, options.DirectSourceIP)
 	report.Serial = inspectStackChanProductRecoverySerial(options.UploadPort, options.SerialGlob)
 	latestFlash, flashFinding := latestStackChanProductRecoveryFlashReport(options.ReportsDir)
 	if flashFinding.Code != "" {
 		report.Findings = append(report.Findings, flashFinding)
 	} else {
 		report.LatestProductFlash = latestFlash
+		if latestFlash.FlashLogEvidence.ROMNoSerialData {
+			report.Findings = append(report.Findings, stackChanProductRecoveryFinding{Code: "rom_probe_no_serial_data", Message: "latest guarded flash log reports no ESP32-S3 serial data", Detail: latestFlash.FlashLogEvidence.LastError})
+		}
 	}
 	report.Status, report.ROMDownloadRequired, report.NextActions = classifyStackChanProductRecovery(report)
 	return report
 }
 
+func fetchStackChanProductRecoveryDeviceReport(options stackChanProductRecoveryOptions) (firmwareDeviceReport, error) {
+	endpoint, safeGatewayURL, err := firmwareDeviceReportEndpoint(options.GatewayURL)
+	if err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	client := *a21DirectHTTPClientWithSourceIP(3*time.Second, options.DirectSourceIP)
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return firmwareDeviceReport{}, fmt.Errorf("gateway device report returned status %d", resp.StatusCode)
+	}
+	var payload struct {
+		SchemaVersion string                               `json:"schema_version"`
+		Service       string                               `json:"service"`
+		Devices       []firmwarecheck.DeviceIdentityRecord `json:"devices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	if err := validateFirmwareDeviceReportGatewayIdentity(payload.SchemaVersion, payload.Service); err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	if err := validateFirmwareDeviceReportDevices(payload.Devices); err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	return firmwareDeviceReport{
+		SchemaVersion:        "a21.firmware.device_report.v1",
+		GatewaySchemaVersion: payload.SchemaVersion,
+		GatewayService:       payload.Service,
+		CapturedAtMS:         time.Now().UnixMilli(),
+		GatewayURL:           safeGatewayURL,
+		Devices:              payload.Devices,
+	}, nil
+}
+
 func fetchStackChanProductRecoveryOfficialStatus(gatewayURL string, deviceID string) stackChanProductRecoveryOfficialRelay {
+	return fetchStackChanProductRecoveryOfficialStatusWithSource(gatewayURL, deviceID, "")
+}
+
+func fetchStackChanProductRecoveryOfficialStatusWithSource(gatewayURL string, deviceID string, directSourceIP string) stackChanProductRecoveryOfficialRelay {
 	query := url.Values{"device_id": []string{deviceID}}
 	endpoint, _, err := firmwareGatewayEndpoint(gatewayURL, "/v1/stackchan/official/status", query)
 	if err != nil {
 		return stackChanProductRecoveryOfficialRelay{Error: err.Error()}
 	}
-	client := *a21DirectHTTPClient(3 * time.Second)
+	client := *a21DirectHTTPClientWithSourceIP(3*time.Second, directSourceIP)
 	resp, err := client.Get(endpoint)
 	if err != nil {
 		return stackChanProductRecoveryOfficialRelay{Error: err.Error()}
@@ -276,6 +351,7 @@ func readStackChanProductRecoveryFlashReport(path string) (stackChanProductRecov
 		EsptoolBefore       string                                 `json:"esptool_before"`
 		WaitROMDownloadMode bool                                   `json:"wait_rom_download_mode"`
 		WaitROMTimeoutSec   int                                    `json:"wait_rom_timeout_seconds"`
+		BuildDirName        string                                 `json:"build_dir_name"`
 		FlashLogFile        string                                 `json:"flash_log_file"`
 		Findings            []stackChanProductRecoveryFlashFinding `json:"findings"`
 	}
@@ -289,9 +365,68 @@ func readStackChanProductRecoveryFlashReport(path string) (stackChanProductRecov
 		EsptoolBefore:       raw.EsptoolBefore,
 		WaitROMDownloadMode: raw.WaitROMDownloadMode,
 		WaitROMTimeoutSec:   raw.WaitROMTimeoutSec,
+		BuildDirName:        raw.BuildDirName,
 		FlashLogFile:        raw.FlashLogFile,
+		FlashLogEvidence:    readStackChanProductRecoveryFlashLogEvidence(path, raw.BuildDirName, raw.FlashLogFile),
 		Findings:            raw.Findings,
 	}, nil
+}
+
+func readStackChanProductRecoveryFlashLogEvidence(reportPath string, buildDirName string, flashLogFile string) stackChanProductRecoveryFlashLog {
+	logName := strings.TrimSpace(flashLogFile)
+	evidence := stackChanProductRecoveryFlashLog{Checked: logName != ""}
+	if logName == "" {
+		return evidence
+	}
+	for _, candidate := range stackChanProductRecoveryFlashLogCandidates(reportPath, buildDirName, logName) {
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+		evidence.Found = true
+		evidence.Path = candidate
+		stackChanProductRecoveryExtractFlashLogEvidence(string(data), &evidence)
+		return evidence
+	}
+	return evidence
+}
+
+func stackChanProductRecoveryFlashLogCandidates(reportPath string, buildDirName string, flashLogFile string) []string {
+	if filepath.IsAbs(flashLogFile) {
+		return []string{flashLogFile}
+	}
+	buildDir := firstNonEmpty(strings.TrimSpace(buildDirName), "a21-stackchan-official-build")
+	candidates := []string{
+		filepath.Join("/tmp", buildDir, flashLogFile),
+		filepath.Join(filepath.Dir(reportPath), flashLogFile),
+	}
+	if buildDir != "a21-stackchan-official-build" {
+		candidates = append(candidates, filepath.Join("/tmp/a21-stackchan-official-build", flashLogFile))
+	}
+	return candidates
+}
+
+func stackChanProductRecoveryExtractFlashLogEvidence(logText string, evidence *stackChanProductRecoveryFlashLog) {
+	for _, line := range strings.Split(logText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(trimmed, "Chip is ESP32-S3") {
+			evidence.ESP32S3Detected = true
+		}
+		if strings.Contains(trimmed, "Timed out waiting for ESP32-S3 ROM download mode") {
+			evidence.ROMProbeTimedOut = true
+			evidence.RecoveryHint = "hold BOOT/download, press and release RESET, keep holding BOOT until ESP32-S3 chip_id is detected"
+		}
+		if strings.Contains(trimmed, "Failed to connect to ESP32-S3") {
+			evidence.LastError = trimmed
+		}
+		if strings.Contains(lower, "no serial data received") {
+			evidence.ROMNoSerialData = true
+			if evidence.RecoveryHint == "" {
+				evidence.RecoveryHint = "enter true ESP32-S3 ROM/download mode before retrying the guarded product flash"
+			}
+		}
+	}
 }
 
 func classifyStackChanProductRecovery(report stackChanProductRecoveryReport) (string, bool, []string) {

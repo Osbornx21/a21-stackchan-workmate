@@ -18580,3 +18580,76 @@ Forbidden actions avoided:
 
 - No firmware flash, no NVS write, no provider/V21 execution, no generic
   product lane, no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 08:03 CST - Product Recovery Precheck Direct-Source And ROM Log Evidence
+
+Round goal:
+
+- Remove the remaining ambiguity in product recovery reports by making
+  TUN-safe public Gateway source binding explicit and by extracting the real
+  ROM/download failure cause from the guarded flash log.
+
+Actual completed work:
+
+- Added `--direct-source-ip` to `stackchan-product-recovery`; it is recorded in
+  the JSON report and used by the command's Gateway `/v1/devices` and official
+  status reads.
+- Added direct-source client helper support without changing existing default
+  direct HTTP behavior.
+- Added latest guarded flash log parsing for product recovery reports:
+  `rom_probe_timed_out`, `rom_no_serial_data`, `esp32s3_detected`,
+  `last_error`, and `recovery_hint`.
+- Live product recovery run used `--direct-source-ip 192.168.1.27` and wrote
+  `reports/a21-stackchan-product-recovery-20260605-080244.json`.
+
+Changed files:
+
+- `internal/app/direct_http.go`
+- `internal/app/app_stackchan_product_recovery.go`
+- `internal/app/app_test.go`
+- `docs/engineering/DOCTOR.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `go test ./internal/app -run 'ProductRecovery|StackChanAccept' -count=1`
+  passed.
+- Live `go run ./cmd/a21 stackchan-product-recovery --gateway-url
+  http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60 --direct-source-ip
+  192.168.1.27 --upload-port /dev/cu.usbmodem1101 --serial-glob
+  '/dev/cu.usbmodem*' --reports-dir reports --output-dir reports` passed.
+- `GOMAXPROCS=2 make preflight` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- `GOMAXPROCS=2 make doctor` passed.
+
+Runtime or physical evidence:
+
+- The direct-source live run successfully read public Gateway status:
+  `official_relay.checked=true`, `official_relay.connected=false`, and
+  `/v1/devices` reported zero product devices.
+- The same report includes latest flash log evidence:
+  `rom_probe_timed_out=true`, `rom_no_serial_data=true`, and last error
+  `A fatal error occurred: Failed to connect to ESP32-S3: No serial data received.`
+- `/dev/cu.usbmodem1101` remains present.
+
+Known risks/blockers:
+
+- Physical ROM/download entry is still required; the new evidence makes the
+  root cause explicit but cannot press BOOT/RESET.
+- Product Xiaozhi reconnect, official `/stackChan/ws`, power-key startup,
+  wake/listen/playback, barge-in, and visible body behavior remain
+  post-recovery acceptance tasks.
+
+Recommended next action:
+
+- Deploy this CLI/report enhancement to ECS, then proceed to the physical ROM
+  recovery window. Use the new report to verify public Gateway status before
+  and after the guarded wait-ROM flash retry.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no device control
+  command, no generic product flash lane, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.

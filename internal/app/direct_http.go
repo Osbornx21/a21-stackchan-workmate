@@ -13,15 +13,22 @@ import (
 const a21DirectSourceIPEnv = "A21_DIRECT_SOURCE_IP"
 
 func a21DirectHTTPClient(timeout time.Duration) *http.Client {
+	return a21DirectHTTPClientWithSourceIP(timeout, strings.TrimSpace(os.Getenv(a21DirectSourceIPEnv)))
+}
+
+func a21DirectHTTPClientWithSourceIP(timeout time.Duration, sourceIP string) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: a21DirectHTTPTransport(),
+		Transport: a21DirectHTTPTransportWithSourceIP(strings.TrimSpace(sourceIP)),
 	}
 }
 
 func a21DirectHTTPTransport() *http.Transport {
+	return a21DirectHTTPTransportWithSourceIP(strings.TrimSpace(os.Getenv(a21DirectSourceIPEnv)))
+}
+
+func a21DirectHTTPTransportWithSourceIP(sourceIP string) *http.Transport {
 	transport := &http.Transport{Proxy: nil}
-	sourceIP := strings.TrimSpace(os.Getenv(a21DirectSourceIPEnv))
 	if sourceIP == "" {
 		return transport
 	}

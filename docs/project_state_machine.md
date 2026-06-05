@@ -43,6 +43,14 @@ Latest control update, 2026-06-05 07:51 CST:
   `127.0.0.1:21081`, Caddy `/healthz` on port 80, loopback official status,
   and loopback `/v1/devices`. Product state remains
   `official.connected=false` and `devices=[]`.
+- 2026-06-05 08:03 CST enhancement: product recovery precheck now supports
+  explicit `--direct-source-ip` and parses the latest guarded flash log for
+  ROM evidence. A live run with `--direct-source-ip 192.168.1.27` wrote
+  `reports/a21-stackchan-product-recovery-20260605-080244.json`; Gateway
+  status checks succeeded, `official.connected=false`, `devices=[]`, and the
+  flash log evidence records `rom_probe_timed_out=true`,
+  `rom_no_serial_data=true`, and
+  `Failed to connect to ESP32-S3: No serial data received`.
 - Next transition remains physical: enter ESP32-S3 ROM/download mode, execute
   the guarded product flash if needed, then verify product Xiaozhi,
   official `/stackChan/ws`, power-key startup, wake/listen/playback,

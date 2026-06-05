@@ -418,10 +418,18 @@ state is explicit:
 go run ./cmd/a21 stackchan-accept --check product-recovery \
   --gateway-url http://47.103.57.217 \
   --device-id 44:1b:f6:e2:6a:60 \
+  --direct-source-ip 192.168.1.20 \
   --upload-port /dev/cu.usbmodem1101 \
   --reports-dir reports \
   --output-dir reports
 ```
+
+When TUN mode makes default public probes return EOF, empty replies, or 502,
+pass the current `en0` address with `--direct-source-ip`; this is equivalent to
+`A21_DIRECT_SOURCE_IP` but recorded directly in the recovery report. The report
+also inspects the latest guarded flash log when available. `rom_no_serial_data`
+means esptool never saw the ESP32-S3 ROM/bootloader, so another ordinary retry
+will not write flash until the device is physically held in ROM/download mode.
 
 Status `product_offline_rom_download_required` means the product USB serial
 node exists and the newest guarded product flash receipt did not write flash,
