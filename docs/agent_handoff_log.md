@@ -80,6 +80,69 @@ Forbidden actions avoided:
   firmware, no Git prune/gc, and no rollback of internal-test3 voice/protocol
   changes.
 
+## 2026-06-05 13:01 CST - StackChan Native Motion And Power Deployed And Flashed
+
+Round goal:
+
+- Complete the native motion/power diagnostics transition after the clean
+  worktree guard blocked the first flash attempt.
+
+Actual completed work:
+
+- Commit `2356745a8586` was deployed to ECS `47.103.57.217` through the
+  `/opt/a21.next` safe-swap path.
+- Guarded product flash passed on `/dev/cu.usbmodem1101` through
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- Post-flash Gateway polling confirmed product Xiaozhi online, official
+  StackChan relay connected, battery/power runtime echo present, touch reaction
+  delivered through `stackchan_official_ws`, and explicit official dance motion
+  delivered through `stackchan_official_ws`.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-native-motion-power-diagnostics.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Remote focused tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway ./internal/app -run 'OfficialStackChan|ProductRecovery|Xiaozhi|PowerLifecycle|BodyMotion|BodyPreset' -count=1`.
+- Remote build passed:
+  `GOMAXPROCS=2 go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active; loopback and public `/healthz` passed.
+- Product flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-125915-1780635555099789000.json`.
+- Product app SHA-256:
+  `357211684819d915106f8b72acdfe3bbf7d4b2f63d4547970599d05efdcd9c51`.
+- Public runtime echo observed:
+  `battery_level`, `battery_charging`, `battery_discharging`,
+  `external_power`, `power_source`, and
+  `pmic_power_key_profile=a21_stackchan_axp2101_pwrkey_v1`.
+- `/v1/power-lifecycle` reports
+  `battery_telemetry=diagnostic_runtime_echo`.
+- Official motion control trace `a21-trace-post-native-motion-flash` returned
+  `status=delivered`, `delivered_transport=stackchan_official_ws`, and
+  `motion=official_dance_sequence`.
+
+Remaining issues:
+
+- Physical acceptance remains pending for no-USB cold boot/shutdown, physical
+  power button, wake sensitivity, no self-loop, first reply latency, and visible
+  body/touch amplitude.
+
+Next suggested action:
+
+- Foreground operator validation: unplug USB, test physical power-key shutdown
+  and cold boot, then validate touch RGB/servo/vibration, larger swipe/body
+  motion, wake sensitivity, no self-loop, and first audible reply timing.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
+  firmware, no Git prune/gc, and no rollback of internal-test3 voice/protocol
+  changes.
+
 ## 2026-06-05 06:58 CST - Wake Physical Launch Gate Enforced
 
 Round goal:

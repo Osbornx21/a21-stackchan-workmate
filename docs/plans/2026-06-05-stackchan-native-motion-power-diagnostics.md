@@ -1,6 +1,6 @@
 # 2026-06-05 - StackChan Native Motion And Power Diagnostics
 
-Status: implementation-built; product flash pending clean worktree.
+Status: deployed and product-flashed; physical acceptance pending operator.
 Transition: `T-STACKCHAN-NATIVE-MOTION-POWER-DIAGNOSTICS-001`.
 
 ## Problem
@@ -58,3 +58,27 @@ semantics.
 - First guarded flash attempt was correctly blocked by the A21 control guard
   because the implementation worktree was dirty. Next action is commit, ECS
   deploy, then guarded product flash on `/dev/cu.usbmodem1101`.
+
+## 2026-06-05 13:01 CST Progress
+
+- Commit `2356745a8586` was deployed to ECS `47.103.57.217` through
+  `/opt/a21.next` safe swap.
+- Remote focused Gateway/App tests passed, remote Go build passed, and
+  `a21-gateway` restarted active with loopback and public `/healthz` OK.
+- Guarded product flash passed on `/dev/cu.usbmodem1101` through
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- Flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-125915-1780635555099789000.json`.
+- Post-flash public Gateway evidence:
+  product device online, official relay connected through
+  `stackchan_official_ws`, runtime echo includes battery/power keys
+  `battery_level`, `battery_charging`, `battery_discharging`,
+  `external_power`, `power_source`, and `pmic_power_key_profile`.
+- Post-flash official motion control trace
+  `a21-trace-post-native-motion-flash` returned `status=delivered`,
+  `delivered_transport=stackchan_official_ws`, and
+  `motion=official_dance_sequence`.
+- `/v1/power-lifecycle` now reports `battery_telemetry=diagnostic_runtime_echo`
+  while no-cable cold boot, physical power button, and PMIC profile physical
+  acceptance remain explicitly missing until foreground operator evidence is
+  submitted.
