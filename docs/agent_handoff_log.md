@@ -19,6 +19,62 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 16:34 CST - Product Candidate Restored With Stock PMIC Startup
+
+Round goal:
+
+- Restore the A21 product candidate after the stock-official A/B flash, using
+  the corrected stock-PMIC-startup overlay.
+
+Actual completed work:
+
+- Committed the stock PMIC startup parity correction at
+  `998a4bba6e9d fix(stackchan): preserve stock pmic startup parity`.
+- Executed the guarded official-compatible product flash lane on
+  `/dev/cu.usbmodem1101`.
+- Captured post-flash USB serial evidence: A21 product booted under USB,
+  initialized PMIC/display/camera/touch/MCP/head touch/IO expander/RTC/IMU/
+  servos, reached official Launcher, and created official app entries including
+  `AI.AGENT`.
+- Captured PMIC boot snapshot:
+  `r00=28,r01=14,r10=34,r12=00,r14=65,r20=04,r21=20,r22=06,r23=3f,r24=00,r26=08,r27=00,r30=3f,r61=05,r62=0d,r63=15,r64=03,r80=05,r82=12,r90=3f,r91=00,r92=0d,r94=1c,r95=1c,r97=1c,r99=18,a4=64,a5=00`.
+
+Changed files:
+
+- No additional source changes after the committed stock PMIC startup parity
+  correction.
+
+Tests/build/runtime results:
+
+- Product flash passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-163318-1780648398612612000.json`.
+- Flashed app:
+  `a21-stackchan-official-xiaozhi-compatible.bin`, SHA-256
+  `5968211923f788666e08bca51740e691dd17ae36d2535d8c265ced73d3abbf23`.
+- Serial evidence showed no boot loop, no `Guru Meditation`, no `abort()`, and
+  no `sys_evt` stack overflow during the capture window.
+
+Remaining issues:
+
+- Physical no-USB PWRKEY acceptance still needs operator foreground evidence.
+  The latest code no longer diverges from stock official PMIC startup, so if
+  the no-USB flash/red-LED symptom remains, the next investigation should focus
+  on physical hold timing, battery/rail state, and AXP2101 power-latch
+  evidence rather than adding more startup register writes.
+- Voice/body UX still needs a fresh A21 product run after selecting `AI.AGENT`;
+  current serial evidence stops at official Launcher.
+
+Recommended next action:
+
+- Operator tests no-USB PWRKEY with explicit hold timing, then opens `AI.AGENT`
+  for wake/listen/body validation on the restored A21 product candidate.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
+  firmware, no Gateway/provider rollback, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 16:32 CST - PMIC Startup Re-Aligned To Stock Official
 
 Round goal:
