@@ -83,6 +83,21 @@ run diary and must stay short.
   closed because required provider env is missing locally; 5080lab remains an
   allowed provider-evidence path, not a substitute for physical StackChan
   p95/barge-in acceptance.
+- 2026-06-05 22:27 CST continuation after user reported 5080lab available:
+  5080lab responds to LAN ping at `192.168.1.6`, but TCP/22 and SSH time out,
+  so Codex cannot run the 5080 provider closure remotely yet. No fresh
+  `reports/a21-5080lab-provider-evidence-*.tgz` is present on the control
+  machine. Local dry-run StepFun provider smoke wrote
+  `reports/5080lab-provider/a21-provider-smoke-20260605-222655-624183000.json`
+  with `status=ready`, `configured=true`, `route_eligible=true`,
+  `stream=true`, `executed=false`; no provider network execution was run on
+  the Mac. Direct-source Gateway health remains OK and device
+  `44:1b:f6:e2:6a:60` remains `xiaozhi_ws_disconnected`. The direct-source
+  true-provider-intent `make stackchan-fast-companion-turn` run wrote
+  `reports/a21-stackchan-fast-companion-turn-20260605-222723.json`, status
+  `failed`, finding `device is not online`; read-only recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-222723.json`, status
+  `product_offline_serial_missing`. No p95/barge-in success recorded.
 
 ## Lean Gate Results - 2026-06-05
 

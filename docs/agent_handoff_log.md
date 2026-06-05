@@ -19,6 +19,86 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 22:27 CST - 5080lab Provider Path Reopened, Physical Lock Still Blocked
+
+Round goal:
+
+- Resume the lean carve north-star after the user reported that 5080lab is now
+  available.
+
+Actual completed work:
+
+- Verified the `main-lean` worktree was clean and still on the three-branch
+  lean topology.
+- Found an SSH alias for `5080lab`; the host is reachable on LAN by ping at
+  `192.168.1.6`, but TCP/22 and SSH both time out, so Codex cannot execute the
+  5080 provider runbook remotely yet.
+- Confirmed there is no new returned
+  `reports/a21-5080lab-provider-evidence-*.tgz` on the control machine. The
+  only available 5080 provider evidence bundle is the old 2026-06-02 package,
+  which is useful as a shape reference but not fresh closure for this resumed
+  round.
+- Ran local dry-run StepFun provider smoke with redacted env handling; it wrote
+  `reports/5080lab-provider/a21-provider-smoke-20260605-222655-624183000.json`
+  with `status=ready`, `configured=true`, `route_eligible=true`, `stream=true`,
+  and `executed=false`.
+- Rechecked public Gateway through direct source IP `192.168.1.27`; health is
+  OK, voice chain still selects `stepfun`, and product device
+  `44:1b:f6:e2:6a:60` is listed but remains `xiaozhi_ws_disconnected`.
+- Reran the true-provider-intent physical north-star command; it still failed
+  before timing with finding `device is not online`.
+- Reran read-only product recovery; it still reports
+  `product_offline_serial_missing`, official relay disconnected, and no local
+  `/dev/cu.usbmodem1101`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/lean/CARVE_LOG.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- No fresh 5080 executed provider evidence bundle has been returned/imported.
+- No true-provider physical first-audio p95 or physical barge-in success exists.
+
+Known risks/blockers:
+
+- 5080lab is present on LAN but cannot be driven by Codex until OpenSSH/port 22
+  is reachable or the operator returns a fresh evidence bundle manually.
+- Product StackChan remains offline from the public Gateway official relay and
+  absent from local USB serial, so provider evidence cannot complete the
+  north-star acceptance by itself.
+
+Recommended next action:
+
+- On 5080lab, enable OpenSSH Server or run the printed
+  `make provider-5080lab-runbook A21_PROVIDER=stepfun` sequence locally and
+  return a fresh `reports/a21-5080lab-provider-evidence-*.tgz`.
+- Separately power/connect product StackChan, open `AI.AGENT`, and confirm it
+  reconnects to `ws://47.103.57.217/v1/xiaozhi`, then rerun
+  `make stackchan-fast-companion-turn` from `main-lean`.
+
+Tests/build/runtime results:
+
+- Local dry-run provider smoke passed readiness without provider execution:
+  `reports/5080lab-provider/a21-provider-smoke-20260605-222655-624183000.json`.
+- Local direct-source Gateway `/healthz` returned OK.
+- Local official relay status returned `connected=false`,
+  `physical_accepted=false`, `next_action=connect_official_stackchan_ws`.
+- Local direct-source `stackchan-fast-companion-turn` wrote
+  `reports/a21-stackchan-fast-companion-turn-20260605-222723.json`, status
+  `failed`, finding `device is not online`.
+- Local direct-source product recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-222723.json`, status
+  `product_offline_serial_missing`.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider key output, no executed provider
+  request on the proxy-affected Mac, no old 5080 package substitution for fresh
+  evidence, and no physical acceptance substitution.
+
 ## 2026-06-05 22:16 CST - Lean Carve North-Star Blocker Reconfirmed
 
 Round goal:

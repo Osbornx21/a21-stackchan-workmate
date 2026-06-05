@@ -106,6 +106,32 @@ Latest lean carve runtime update, 2026-06-05 22:16 CST:
   5080lab may close provider evidence, but the transition cannot complete
   without physical StackChan reconnection.
 
+Latest lean carve 5080/runtime update, 2026-06-05 22:27 CST:
+
+- User reported 5080lab is available. The control machine has an SSH alias for
+  `5080lab`; the host responds to LAN ping at `192.168.1.6`, but TCP/22 and SSH
+  time out, so Codex cannot drive the runbook remotely yet.
+- No fresh `reports/a21-5080lab-provider-evidence-*.tgz` has been returned to
+  the control machine. The existing 2026-06-02 bundle remains historical shape
+  evidence only for this resumed round.
+- Local dry-run StepFun provider smoke now closes configuration readiness
+  without network execution:
+  `reports/5080lab-provider/a21-provider-smoke-20260605-222655-624183000.json`
+  reports `status=ready`, `configured=true`, `route_eligible=true`,
+  `stream=true`, and `executed=false`.
+- Direct-source public Gateway health is still OK and the product device
+  `44:1b:f6:e2:6a:60` remains listed, but its connection status is
+  `xiaozhi_ws_disconnected`; official relay status is `connected=false`.
+- The direct-source true-provider-intent `make stackchan-fast-companion-turn`
+  run wrote `reports/a21-stackchan-fast-companion-turn-20260605-222723.json`,
+  status `failed`, finding `device is not online`; no p95 or physical barge-in
+  result exists.
+- Read-only recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-222723.json`, status
+  `product_offline_serial_missing`; local `/dev/cu.usbmodem1101` is absent.
+- Current override remains
+  `S-LEAN-CARVE-GOVERNANCE-CI-PASSED-RUNTIME-PHYSICAL-STACKCHAN-OFFLINE-BLOCKED`.
+
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
 are the project memory.
