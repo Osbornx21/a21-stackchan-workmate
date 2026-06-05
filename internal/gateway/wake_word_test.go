@@ -74,54 +74,27 @@ func TestWakeWordCustomResponseKeepsBuiltinActiveAndCustomPendingFirmware(t *tes
 	}
 }
 
-func TestSimulatorWakeWordPanelShowsRuntimeAndFirmwareSeparation(t *testing.T) {
+func TestProductGatewayDoesNotServeSimulatorWakeWordPanel(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/simulator", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	for _, want := range []string{
-		`id="wakeWordFirmwareStatus"`,
-		`id="wakeWordHotSwap"`,
-		`firmware_status`,
-		`runtime_hot_swap_supported`,
-		`custom_runtime_active`,
-		"builtin_active",
-		"custom_pending_firmware",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("simulator page missing %q", want)
-		}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestSimulatorWakeWordPanelShowsResetAndExportAffordances(t *testing.T) {
+func TestProductGatewayDoesNotServeSimulatorWakeWordActions(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/simulator", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	for _, want := range []string{
-		`id="resetWakeWord"`,
-		`id="exportWakeWord"`,
-		"resetWakeWordConfig",
-		"exportWakeWordConfig",
-		`mode: 'builtin_xiaozhi'`,
-		"a21-wake-word-config.json",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("simulator page missing %q", want)
-		}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body.String())
 	}
 }
 

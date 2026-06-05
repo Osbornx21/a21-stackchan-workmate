@@ -28,5 +28,8 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Run A21 lean gate
+        run: bash scripts/lean-gate.sh
+
       - name: Run A21 release check
         run: make release-check

@@ -19,6 +19,103 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 21:20 CST - Lean Carve Mainline Governance Rescue
+
+Round goal:
+
+- Execute the lean carve order from the user-provided 2026-06-05 goal file
+  after internal test 4 was frozen, removing governance sprawl and separating
+  product runtime from lab/demo/evidence scaffolding.
+
+Actual completed work:
+
+- Created and worked on `main-lean` from frozen HEAD `090eca6`.
+- Added the lean carve plan override, product-set record, carve log, and
+  automated lean gate.
+- Removed dead required-reading entries from `AGENTS.md`.
+- Removed tracked generated report artifacts from Git and expanded ignored
+  runtime artifact paths.
+- Mechanically split oversized Go implementation and test files while keeping
+  package ownership stable.
+- Moved lab/demo/bench/evidence/professional command dispatch behind
+  `cmd/a21-lab`.
+- Removed simulator/product-demo acceptance leakage from product readiness and
+  product Gateway defaults.
+- Added real StackChan microphone barge-in measurement support to
+  `stackchan-fast-companion-turn`.
+- Deleted historical local branches after recording the fan-in decision,
+  leaving exactly three local branches.
+
+Changed files:
+
+- `.github/workflows/ci.yml`
+- `.gitignore`
+- `AGENTS.md`
+- `Makefile`
+- `cmd/a21-lab/main.go`
+- `docs/agent_handoff_log.md`
+- `docs/lean/CARVE_LOG.md`
+- `docs/lean/PRODUCT_SET.md`
+- `docs/plans/2026-06-05-a21-stabilization-after-internal-test4.md`
+- `docs/project_state_machine.md`
+- `internal/app/*`
+- `internal/audio/*`
+- `internal/gateway/*`
+- `internal/providers/*`
+- `scripts/lean-gate.sh`
+- removed stale tracked `reports/*.json` artifacts listed in
+  `docs/lean/CARVE_LOG.md`
+
+Unfinished items:
+
+- The final north-star true-provider fast companion runtime lock is not
+  satisfied because the public Gateway returned EOF before device status could
+  be read.
+- The lean carve commit is ready locally after verification; push remains
+  pending until the runtime Gateway blocker is handled.
+
+Known risks/blockers:
+
+- Public `http://47.103.57.217` responded with proxy `502 Bad Gateway` through
+  the proxy path and `Empty reply from server` / EOF with direct no-proxy
+  probes. The failed runtime report is
+  `reports/a21-stackchan-fast-companion-turn-20260605-211656.json`.
+- SSH recovery probing from this workspace is blocked: `root@47.103.57.217`
+  closed port 22 connections when accessed with the recorded A21 operations
+  key, so no remote `systemctl` inspection or restart was performed.
+- Lab functions are still source co-located in Go packages where needed for
+  the current Go-first foundation; the enforced product boundary is product
+  CLI dispatch plus product binary reachability, verified by `go list` and
+  `go tool nm`.
+
+Recommended next action:
+
+- Recover the live ECS Gateway/public `/v1/devices` path, then rerun
+  `make stackchan-fast-companion-turn` with true provider execution and record
+  p95 plus barge-in stop metrics in `docs/lean/CARVE_LOG.md`.
+
+Tests/build/runtime results:
+
+- `go test ./...` passed.
+- `make verify` passed.
+- `make preflight` passed on sequential rerun after an initial parallel-run
+  reserved-port conflict.
+- `make doctor` passed.
+- `bash scripts/lean-gate.sh` passed.
+- Product dependency and symbol checks passed: no bench/demo/evidence/
+  professional dependency path matches for `cmd/a21`, and no lab/simulator
+  product binary symbol matches.
+- Final runtime evidence failed at Gateway `/v1/devices` EOF; no current
+  p95/barge-in success was recorded.
+- Remote SSH read-only health probes failed before command execution because
+  the server closed the port 22 connection.
+
+Forbidden actions avoided:
+
+- No provider keys in firmware, no firmware flash, no NVS write, no generic
+  Xiaozhi product flash lane, no unguarded upload command, no Git reset/gc,
+  and no rollback of user or frozen-baseline changes.
+
 ## 2026-06-05 19:20 CST - Internal Test 4 Stabilization Freeze Started
 
 Round goal:

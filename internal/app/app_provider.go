@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/providers"
-	"a21.local/a21/internal/v21adapter"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/providers"
+	"a21.local/a21/internal/v21adapter"
 )
 
 func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {

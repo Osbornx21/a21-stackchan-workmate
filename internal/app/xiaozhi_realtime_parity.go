@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/firmwarecheck"
-	"a21.local/a21/internal/gateway"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/gateway"
 )
 
 const xiaozhiRealtimeParitySchemaVersion = "a21.xiaozhi_realtime_parity.v1"

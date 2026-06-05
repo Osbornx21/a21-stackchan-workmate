@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/gateway"
-	"a21.local/a21/internal/protocol"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/gateway"
+	"a21.local/a21/internal/protocol"
 )
 
 var requiredStackChanCapabilities = []string{
@@ -126,8 +127,6 @@ func dispatchStackChanAccept(check string, args []string, stdout io.Writer, stde
 		return runStackChanHalfDuplexAcceptance(args, stdout, stderr)
 	case "xiaozhi-half-duplex", "stock-half-duplex", "xiaozhi-physical-half-duplex":
 		return runXiaozhiHalfDuplexAcceptance(args, stdout, stderr)
-	case "xiaozhi-prd-review", "xiaozhi-physical-prd-review":
-		return runXiaozhiPhysicalPRDReview(args, stdout, stderr)
 	case "speaker":
 		return runStackChanSpeakerAcceptance(args, stdout, stderr)
 	case "touch":

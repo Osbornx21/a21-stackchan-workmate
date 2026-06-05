@@ -1,7 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/firmwarecheck"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/firmwarecheck"
 )
 
 type stackChanSensorProbeAcceptanceOptions struct {

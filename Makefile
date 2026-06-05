@@ -101,7 +101,7 @@ gateway:
 	go run ./cmd/a21 gateway --addr 127.0.0.1:21080
 
 demo:
-	go run ./cmd/a21 demo --addr 127.0.0.1:21080 --open
+	go run ./cmd/a21-lab demo --addr 127.0.0.1:21080 --open
 
 product-readiness:
 	go run ./cmd/a21 product-readiness --gateway-url "$${A21_GATEWAY_URL:-http://127.0.0.1:21080}" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --output-dir reports
@@ -190,7 +190,7 @@ provider-realtime-fixture:
 	go run ./cmd/a21 provider-realtime-fixture --provider "$(A21_PROVIDER)" --execute --output-dir reports
 
 provider-latency-bench:
-	go run ./cmd/a21 provider-latency-bench --provider "$${A21_PROVIDER:-mock}" --iterations "$${A21_PROVIDER_LATENCY_ITERATIONS:-5}" --output-dir reports
+	go run ./cmd/a21-lab provider-latency-bench --provider "$${A21_PROVIDER:-mock}" --iterations "$${A21_PROVIDER_LATENCY_ITERATIONS:-5}" --output-dir reports
 
 xiaozhi-streaming-provider-readiness:
 	go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports
@@ -231,7 +231,8 @@ stackchan-local-tts-playback:
 	go run ./cmd/a21 stackchan-local-tts-playback --output-dir reports
 
 stackchan-fast-companion-turn:
-	go run ./cmd/a21 stackchan-fast-companion-turn --repeat 3 --output-dir reports
+	@test -n "$${A21_PROVIDER_PRIMARY}" || (echo "A21_PROVIDER_PRIMARY is required for true-provider fast companion evidence"; exit 2)
+	go run ./cmd/a21 stackchan-fast-companion-turn --gateway-url "$${A21_GATEWAY_URL:-http://127.0.0.1:21080}" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --engine "$${A21_LOCAL_TTS_ENGINE:-macos_say}" --asr-provider "$${A21_LOCAL_ASR_PROVIDER:-sherpa_onnx}" --text-provider "$${A21_PROVIDER_PRIMARY}" --execute-text-provider --listen-source "$${A21_FAST_COMPANION_LISTEN_SOURCE:-stackchan_mic}" --repeat 3 --output-dir reports
 
 stackchan-official-baseline:
 	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" $(if $(A21_STACKCHAN_OFFICIAL_DEP_CACHE),--dep-cache "$(A21_STACKCHAN_OFFICIAL_DEP_CACHE)",) --output-dir reports
@@ -354,7 +355,7 @@ xiaozhi-firmware-flash-execute:
 	go run ./cmd/a21 xiaozhi-firmware-flash --execute --build-dir "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --confirm "$(A21_XIAOZHI_FIRMWARE_FLASH_CONFIRM)" --output-dir reports
 
 latency-bench:
-	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
+	go run ./cmd/a21-lab latency-bench --mock --iterations 5 --output-dir reports
 
 release-check: verify gate latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan office-handoff
 
@@ -518,7 +519,7 @@ xiaozhi-physical-prd-review:
 	@test -n "$(A21_XIAOZHI_PHYSICAL_EVIDENCE_REPORT)" || (echo "A21_XIAOZHI_PHYSICAL_EVIDENCE_REPORT is required"; exit 2)
 	@test -n "$(A21_XIAOZHI_HALF_DUPLEX_ACCEPTANCE_REPORT)" || (echo "A21_XIAOZHI_HALF_DUPLEX_ACCEPTANCE_REPORT is required"; exit 2)
 	@test "$(A21_XIAOZHI_PHYSICAL_PRD_REVIEW_CONFIRM)" = "ACCEPT_A21_XIAOZHI_PHYSICAL_PRD" || (echo "A21_XIAOZHI_PHYSICAL_PRD_REVIEW_CONFIRM must be ACCEPT_A21_XIAOZHI_PHYSICAL_PRD"; exit 2)
-	go run ./cmd/a21 xiaozhi-physical-prd-review --physical-evidence-report "$(A21_XIAOZHI_PHYSICAL_EVIDENCE_REPORT)" --half-duplex-report "$(A21_XIAOZHI_HALF_DUPLEX_ACCEPTANCE_REPORT)" --confirm "$(A21_XIAOZHI_PHYSICAL_PRD_REVIEW_CONFIRM)" --output-dir reports
+	go run ./cmd/a21-lab xiaozhi-physical-prd-review --physical-evidence-report "$(A21_XIAOZHI_PHYSICAL_EVIDENCE_REPORT)" --half-duplex-report "$(A21_XIAOZHI_HALF_DUPLEX_ACCEPTANCE_REPORT)" --confirm "$(A21_XIAOZHI_PHYSICAL_PRD_REVIEW_CONFIRM)" --output-dir reports
 
 stackchan-speaker-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)

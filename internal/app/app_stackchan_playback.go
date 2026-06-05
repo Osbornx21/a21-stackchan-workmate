@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/audio"
-	"a21.local/a21/internal/protocol"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/audio"
+	"a21.local/a21/internal/protocol"
 )
 
 const (

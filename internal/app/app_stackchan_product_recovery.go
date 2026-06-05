@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/firmwarecheck"
-	"a21.local/a21/internal/gateway"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/gateway"
 )
 
 type stackChanProductRecoveryOptions struct {

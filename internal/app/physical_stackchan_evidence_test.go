@@ -16,7 +16,7 @@ func TestRunPhysicalStackChanEvidenceCompleteFixtureEmitsRedactedContract(t *tes
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := Run([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", outputDir}, &stdout, &stderr)
+	code := RunLab([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", outputDir}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
@@ -81,7 +81,7 @@ func TestRunPhysicalStackChanEvidenceMissingCoreCategoriesFindings(t *testing.T)
 			fixturePath := writeTestPhysicalStackChanEvidenceFixture(t, dir, tc.override)
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
-			code := Run([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", filepath.Join(dir, "reports")}, &stdout, &stderr)
+			code := RunLab([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", filepath.Join(dir, "reports")}, &stdout, &stderr)
 			if code != 0 {
 				t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 			}
@@ -109,7 +109,7 @@ func TestRunPhysicalStackChanEvidenceHostLoopbackStaysCandidateHostOnly(t *testi
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := Run([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", filepath.Join(dir, "reports")}, &stdout, &stderr)
+	code := RunLab([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", filepath.Join(dir, "reports")}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
@@ -143,7 +143,7 @@ func TestRunPhysicalStackChanEvidenceUnsafeFixtureIsRedacted(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := Run([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", filepath.Join(dir, "reports")}, &stdout, &stderr)
+	code := RunLab([]string{"physical-stackchan-evidence", "--fixture", fixturePath, "--output-dir", filepath.Join(dir, "reports")}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0 redacted report: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}

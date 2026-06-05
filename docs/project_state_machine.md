@@ -6,15 +6,21 @@ Last updated: 2026-06-05.
 ## Stabilization Override
 
 Active override transition:
-`T-A21-P0-VOICE-LOOP-RCA-001`.
+`T-A21-LEAN-CARVE-MAINLINE-001`.
 
 Current override state:
-`S-INTERNAL-TEST4-BASELINE-PROTECTED-P0-VOICE-RCA-IN-PROGRESS`.
+`S-LEAN-CARVE-GOVERNANCE-GATES-PASSED-RUNTIME-GATEWAY-EOF-BLOCKED`.
 
 Internal test 4 is now the protected recovery baseline. Until P0 stabilization
 exits, no new feature work, product flash, provider chain change, side-branch
 merge, or worker expansion is allowed unless it is explicitly tied to rollback,
 recovery, or a P0 acceptance transition.
+
+The 2026-06-05 lean carve temporarily supersedes the P0 voice-loop RCA as the
+active control transition because the user explicitly ordered governance
+contraction after freezing internal test 4. The prior P0 RCA state remains
+preserved below and must not be re-expanded until the carve's runtime blocker
+is closed.
 
 Recovery baseline:
 `docs/engineering/A21_INTERNAL_TEST4_RECOVERY_BASELINE.md`.
@@ -29,7 +35,39 @@ Latest P0 voice-loop RCA:
 `docs/engineering/A21_P0_VOICE_LOOP_RCA_20260605.md`.
 
 Active transition:
-`T-XIAOZHI-MANUAL-START-OFFICIAL-MODE-PARITY-001`.
+`T-A21-LEAN-CARVE-MAINLINE-001`.
+
+Latest lean carve update, 2026-06-05 21:20 CST:
+
+- Branch `main-lean` was created from frozen HEAD `090eca6`.
+- Local branch fan-in completed to exactly three branches:
+  `main-lean`, `codex/a21-stabilization-after-internal-test4-20260605`, and
+  `codex/a21-hardware-window-20260605-product-flash-9f4532a`.
+- Product/lab split completed at command-dispatch and binary-reachability
+  level. Product `cmd/a21` no longer dispatches lab demo/bench/evidence/
+  professional commands; `cmd/a21-lab` owns those execution paths.
+- Product readiness no longer promotes simulator/mock demo proof as
+  product-ready, and product Gateway no longer serves the simulator route by
+  default.
+- Oversized Go files were mechanically split; current maximum product
+  implementation file is 773 lines and current maximum test file is 896 lines.
+- Lean verification passed: `go test ./...`, `make verify`, sequential
+  `make preflight`, `make doctor`, and `bash scripts/lean-gate.sh`.
+- Product dependency and product-binary checks passed with no
+  bench/demo/evidence/professional dependency path matches and no
+  lab/simulator binary symbol matches.
+- The carve is not complete: `make stackchan-fast-companion-turn` with true
+  provider intent failed before timing evidence because public Gateway
+  `/v1/devices` returned EOF. No current p95/barge-in lock exists.
+- Recovery probing from this workspace is externally blocked: public direct
+  `/healthz` and `/v1/devices` return `Empty reply from server`, and SSH to
+  `root@47.103.57.217` closes the port 22 connection before remote commands can
+  run.
+- Next state candidate:
+  `S-LEAN-CARVE-RUNTIME-GATEWAY-RECOVERED-FAST-COMPANION-LOCK-PENDING`.
+- Next action: recover the ECS Gateway/public `/v1/devices` path, rerun the
+  true-provider StackChan fast companion turn, and record p95 plus barge-in
+  stop metrics in `docs/lean/CARVE_LOG.md`.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence

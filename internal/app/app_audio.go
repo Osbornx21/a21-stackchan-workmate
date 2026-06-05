@@ -1,7 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/audio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/audio"
 )
 
 var synthesizeMacOSSay = audio.SynthesizeMacOSSay

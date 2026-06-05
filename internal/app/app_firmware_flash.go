@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/firmwarecheck"
-	"a21.local/a21/internal/runtimeguard"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/runtimeguard"
 )
 
 var runFirmwareBootstrapFlashCommand = runFirmwareBootstrapFlashCommandExec

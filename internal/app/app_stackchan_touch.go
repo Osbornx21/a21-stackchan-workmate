@@ -1,7 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/protocol"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/protocol"
 )
 
 type stackChanTouchCaseSpec struct {

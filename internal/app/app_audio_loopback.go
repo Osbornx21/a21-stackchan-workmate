@@ -1,9 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/audio"
-	"a21.local/a21/internal/personality"
-	"a21.local/a21/internal/providers"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/audio"
+	"a21.local/a21/internal/personality"
+	"a21.local/a21/internal/providers"
 )
 
 type localVoiceLoopbackReport struct {

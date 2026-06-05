@@ -90,3 +90,83 @@ Complete `T-A21-STABILIZE-CONTROL-SURFACE-001`, commit it, and push the
 stabilization branch. Then start P0 power boot RCA as the first code-adjacent
 transition, because a device that cannot reliably power on cannot be accepted
 as an internal-test product.
+
+## Lean Carve Override - 2026-06-05
+
+Transition:
+`T-A21-LEAN-CARVE-MAINLINE-001`.
+
+Current state:
+`S-INTERNAL-TEST4-FROZEN-HEAD-090ECA6-UNREVIEWABLE-MAINLINE`.
+
+Target state:
+`S-MAIN-LEAN-REVIEWABLE-PRODUCT-CORE`.
+
+Trigger:
+The internal test 4 branch is frozen and usable, but the repository has grown
+into an unreviewable control surface: `cmd/a21` imports one `internal/app`
+god-package containing product, lab, bench, demo, evidence, professional
+acceptance, firmware, and report commands; `internal/gateway/server.go`,
+`internal/app/app_test.go`, and `internal/gateway/server_test.go` exceed any
+reasonable review unit; generated/runtime reports and local work artifacts are
+still present as repository concerns.
+
+Action:
+
+1. Create the single allowed convergence branch `main-lean` from frozen HEAD
+   `090eca6`.
+2. Record the current product dependency set in `docs/lean/PRODUCT_SET.md`.
+3. Split product `cmd/a21` from lab-only commands under `cmd/a21-lab` or
+   non-product packages so the product binary no longer compiles
+   demo/bench/evidence/professional scaffolding.
+4. Split the oversized product and test files by existing responsibilities
+   without changing runtime behavior.
+5. Move local reports/runtime artifacts out of product governance by ignoring
+   `reports/`, `.a21-run/`, `.a21-tmp/`, `.a21-tools/`, `dist/`, and
+   `.playwright-cli/`; record irreversible removals in
+   `docs/lean/CARVE_LOG.md` before deleting tracked files or local branches.
+6. Replace dead governance references in `AGENTS.md` with the lean/current
+   documents that still exist.
+7. Add the local/CI `scripts/lean-gate.sh` required by the carve order.
+
+Acceptance:
+
+- `bash scripts/lean-gate.sh` exits 0.
+- `cmd/a21` and `cmd/a21-lab` are separate; the product package set no longer
+  contains files named for `bench`, `demo`, `evidence`, or `professional`.
+- No production `.go` file under `internal` or `cmd` exceeds 800 lines; no
+  test file exceeds 1000 lines.
+- `git branch | wc -l` is at most 3 after branch convergence, and every deleted
+  branch has one `CARVE_LOG.md` line.
+- Product artifacts and runtime reports are ignored or out of the worktree.
+- `make stackchan-fast-companion-turn` records true-provider answer first-audio
+  p95 below 1500 ms and one barge-in check in `CARVE_LOG.md`.
+
+Failure state:
+Any product behavior rewrite without before/after evidence, any new feature or
+provider/firmware lane, any unguarded product flash/upload command, any provider
+secret or transcript stored in Git/report output, any X21 runtime identity added
+outside guardrails/docs/tests/adapter context, or any deletion/rebase/branch
+removal without a prior `CARVE_LOG.md` entry.
+
+Rollback path:
+Return to frozen HEAD `090eca6` or the protected internal test 4 release commit
+`1387d58f364f6ae1c7258487fb5a9863567adc74`; do not reuse any partially carved
+branch as a product flash source.
+
+Execution task:
+Current Codex session executes the transition on `main-lean`. No additional
+Codex worker branch or parallel write-capable worktree is allowed in this
+transition.
+
+Boundary conditions:
+No product feature work, no provider chain switch, no firmware build or flash,
+no V21 internal access, no production dependency addition, no raw hardware write
+command, no X21/V21 runtime namespace reuse, and no deletion of redline assets:
+`internal/runtimeguard`, `internal/v21adapter`, `internal/protocol`,
+`internal/transport/{xiaozhi,stackchan}`, real streaming provider/audio
+pipeline code, and guarded official-compatible product flash discipline.
+
+Required summary format:
+What changed; files changed; tests/build/runtime results; deviations from this
+plan; remaining issues; next suggested action.

@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/audio"
-	"a21.local/a21/internal/providers"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +9,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/audio"
+	"a21.local/a21/internal/providers"
 )
 
 const providerCompatMatrixSchemaVersion = "a21.provider_compat_matrix.v1"

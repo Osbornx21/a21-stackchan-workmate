@@ -1,8 +1,6 @@
 package app
 
 import (
-	"a21.local/a21/internal/firmwarecheck"
-	"a21.local/a21/internal/protocol"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/protocol"
 )
 
 type stackChanSpeakerAcceptanceOptions struct {

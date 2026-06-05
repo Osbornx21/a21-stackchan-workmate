@@ -381,18 +381,12 @@ func collectServerSideProfessionalRitual(options serverSideReadinessBundleOption
 	step := serverSideReadinessCollectionStep{
 		Name:                "professional_ritual_execution",
 		Status:              "skipped",
-		Reason:              "requires --execute-v21-smoke",
-		Command:             "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports",
-		ExecutionAuthorized: options.ExecuteV21Smoke,
+		Reason:              "lab command moved to cmd/a21-lab",
+		Command:             "go run ./cmd/a21-lab xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports",
+		ExecutionAuthorized: false,
 		ExternalExecution:   true,
 	}
-	if !options.ExecuteV21Smoke {
-		return step
-	}
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	code := Run([]string{"xiaozhi-professional-bench", "--gateway-url", options.GatewayURL, "--device-id", options.DeviceID, "--output-dir", options.OutputDir}, &stdout, &stderr)
-	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-xiaozhi-professional-bench-*.json"})
+	return step
 }
 
 func collectServerSideProfessionalReadRecord(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
@@ -408,14 +402,12 @@ func collectServerSideHostVoice(options serverSideReadinessBundleOptions) server
 	}
 	step := serverSideReadinessCollectionStep{
 		Name:                "host_voice_loopback",
-		Status:              "failed",
-		Command:             fmt.Sprintf("go run ./cmd/a21 xiaozhi-voice-bench --repeat %d --require-product-chain --output-dir reports", repeat),
-		ExecutionAuthorized: true,
+		Status:              "skipped",
+		Reason:              "lab command moved to cmd/a21-lab",
+		Command:             fmt.Sprintf("go run ./cmd/a21-lab xiaozhi-voice-bench --repeat %d --require-product-chain --output-dir reports", repeat),
+		ExecutionAuthorized: false,
 	}
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	code := Run([]string{"xiaozhi-voice-bench", "--gateway-url", options.GatewayURL, "--repeat", fmt.Sprintf("%d", repeat), "--require-product-chain", "--output-dir", options.OutputDir}, &stdout, &stderr)
-	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-xiaozhi-voice-bench-*.json"})
+	return step
 }
 
 func collectServerSideRoleplayVoice(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
@@ -493,11 +485,11 @@ func buildServerSideReadinessCollectionCommands(report productReadinessReport) [
 		case "v21_professional_smoke":
 			commands = append(commands, "go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports")
 		case "professional_ritual_execution":
-			commands = append(commands, "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports")
+			commands = append(commands, "go run ./cmd/a21-lab xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports")
 		case "professional_read_record":
-			commands = append(commands, "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports")
+			commands = append(commands, "go run ./cmd/a21-lab xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports")
 		case "host_voice_loopback":
-			commands = append(commands, "go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports")
+			commands = append(commands, "go run ./cmd/a21-lab xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports")
 		case "roleplay_voice_runtime":
 			commands = append(commands, "go run ./cmd/a21 roleplay-voice-probe --require-ready --output-dir reports")
 		case "wake_word":
