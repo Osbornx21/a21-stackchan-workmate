@@ -347,17 +347,19 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPowerKeyLifecycle(t *
 
 	for _, required := range []string{
 		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
+		`WriteReg(0x10, common_config | 0x04);`,
 		`WriteReg(0x22, 0b110);`,
-		`WriteReg(0x27, 0x10);`,
+		`WriteReg(0x27, 0x00);`,
+		`Enable 16s PWRON hardware PMIC shutdown fallback.`,
 		`PWRON and OFFLEVEL can request PMIC power-off.`,
-		`hardware power key long-press path at 4s`,
+		`Preserve official ON/OFF timing: 128ms on, 4s off.`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing StackChan power-key lifecycle contract %q", required)
 		}
 	}
-	if strings.Contains(overlay, `+        WriteReg(0x27, 0x00);`) {
-		t.Fatalf("official Xiaozhi-compatible overlay must not add the old immediate PMIC power-key timing")
+	if strings.Contains(overlay, `+        WriteReg(0x27, 0x10);`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must preserve official PMIC ON/OFF timing instead of changing IRQLEVEL")
 	}
 }
 
