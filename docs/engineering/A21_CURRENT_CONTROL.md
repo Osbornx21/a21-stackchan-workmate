@@ -120,6 +120,12 @@ transition:
   and `/v1/devices` returned zero devices. The latest flash log evidence is
   `rom_probe_timed_out=true`, `rom_no_serial_data=true`, and
   `LastError="A fatal error occurred: Failed to connect to ESP32-S3: No serial data received."`.
+- Commit `9d6c909 feat(app): enrich stackchan recovery diagnostics` was pushed
+  and deployed to ECS through the same Cloud Assistant `/opt/a21.next`
+  safe-swap path. Remote SHA verification, focused product-recovery app tests,
+  remote build, `a21-gateway` restart, loopback `127.0.0.1:21081/healthz`,
+  Caddy port 80 `/healthz`, official status, and `/v1/devices` smoke passed.
+  Product state remains `official.connected=false` and `devices=[]`.
 - Next physical action remains unchanged: put the product StackChan into true
   ESP32-S3 ROM/download mode, rerun the guarded wait-ROM official-compatible
   product flash if needed, then verify product Xiaozhi, official

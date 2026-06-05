@@ -51,6 +51,11 @@ Latest control update, 2026-06-05 07:51 CST:
   flash log evidence records `rom_probe_timed_out=true`,
   `rom_no_serial_data=true`, and
   `Failed to connect to ESP32-S3: No serial data received`.
+- Commit `9d6c909 feat(app): enrich stackchan recovery diagnostics` was
+  deployed to ECS through Cloud Assistant and the `/opt/a21.next` safe-swap
+  path. Remote app tests, build, service restart, loopback/Caddy health
+  checks, official status, and `/v1/devices` smoke passed. Product state is
+  still `official.connected=false` and `devices=[]`.
 - Next transition remains physical: enter ESP32-S3 ROM/download mode, execute
   the guarded product flash if needed, then verify product Xiaozhi,
   official `/stackChan/ws`, power-key startup, wake/listen/playback,

@@ -18644,12 +18644,70 @@ Known risks/blockers:
 
 Recommended next action:
 
-- Deploy this CLI/report enhancement to ECS, then proceed to the physical ROM
-  recovery window. Use the new report to verify public Gateway status before
-  and after the guarded wait-ROM flash retry.
+- Proceed to the physical ROM recovery window. Use the new report to verify
+  public Gateway status before and after the guarded wait-ROM flash retry.
 
 Forbidden actions avoided:
 
 - No firmware flash, no NVS write, no provider/V21 execution, no device control
   command, no generic product flash lane, no Git prune/gc, and no
   internal-test3 voice/protocol rollback.
+
+## 2026-06-05 08:06 CST - Recovery Diagnostics Enhancement Deployed To ECS
+
+Round goal:
+
+- Deploy `9d6c909 feat(app): enrich stackchan recovery diagnostics` to the
+  public ECS host and verify the new direct-source/log-evidence CLI is present
+  remotely.
+
+Actual completed work:
+
+- Sent the current source archive to ECS as Cloud Assistant `SendFile` chunks,
+  reassembled it, and verified remote SHA-256 before extraction.
+- Ran focused product recovery app tests in `/opt/a21.next`.
+- Built `/opt/a21.next/bin/a21`.
+- Safe-swapped `/opt/a21.next` to `/opt/a21` and restarted `a21-gateway`.
+- Confirmed the remote CLI help includes `--direct-source-ip`.
+
+Changed files:
+
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Remote `go test ./internal/app -run 'ProductRecovery|StackChanAccept'
+  -count=1` passed.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed.
+- Remote smoke passed:
+  `systemctl is-active a21-gateway`,
+  `http://127.0.0.1:21081/healthz`,
+  `http://127.0.0.1/healthz`,
+  `http://127.0.0.1:21081/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60`,
+  and `http://127.0.0.1:21081/v1/devices`.
+
+Runtime or physical evidence:
+
+- ECS now serves `9d6c909` runtime/CLI.
+- Official status remains `connected=false` with
+  `next_action=connect_official_stackchan_ws`.
+- Device registry still reports `devices=[]`.
+
+Known risks/blockers:
+
+- Physical ROM/download entry and post-recovery acceptance remain pending.
+
+Recommended next action:
+
+- In the next hardware window, run the enhanced product recovery precheck with
+  the current `en0` source IP, enter ESP32-S3 ROM/download mode, rerun the
+  guarded wait-ROM product flash if needed, then immediately verify Gateway
+  device status and official relay status.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no generic
+  product flash lane, no Git prune/gc, and no internal-test3 voice/protocol
+  rollback.
