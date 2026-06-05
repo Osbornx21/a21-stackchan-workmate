@@ -1,7 +1,7 @@
 # A21 Agent Handoff Log
 
 Status: active handoff document.
-Last updated: 2026-06-05.
+Last updated: 2026-06-06.
 
 This log is the recovery surface for Codex workers and future control-tower
 threads. Every work round must add or update an entry before handoff. Keep this
@@ -18,6 +18,79 @@ Each entry should include:
 - recommended next action;
 - test, build, or runtime results;
 - failure location and reason, when applicable.
+
+## 2026-06-06 04:10 CST - Official Overlay Build Stabilized
+
+Round goal:
+
+- Full-review the official-compatible overlay path after repeated build
+  failures and voice/body regressions, without rolling back internal test 4.
+
+Actual completed work:
+
+- Found the first build failure source: default product firmware build was
+  still allowed to fetch GitHub dependencies live; ArduinoJson clone had failed
+  before overlay application.
+- Added automatic dependency-cache discovery: when the local official
+  StackChan source already contains fetched dependency repos, the builder uses
+  it as `A21_STACKCHAN_OFFICIAL_DEP_CACHE` instead of live `fetch_repos.py`.
+- Found the second build failure source: Homebrew Python 3.14 framework had an
+  invalid sealed resource signature and ESP-IDF Python detection was killed by
+  macOS. Re-signed the local Homebrew Python 3.14 framework and hardened the
+  firmware build script to prefer the existing ESP-IDF `idf5.5_py3.14_env`,
+  with `PYTHONDONTWRITEBYTECODE=1`.
+- Reduced P0 voice-loop risk in the product overlay: the idle quiet control
+  channel is no longer enabled by default, and screen/top touch no longer
+  starts listening automatically. Touch still emits local RGB/servo/sound
+  feedback and sends product touch events after Gateway allowance.
+
+Changed files:
+
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- No product flash was executed in this round.
+- Physical acceptance remains required for wake sensitivity, no self-loop,
+  fast first reply, touch RGB/servo/sound, and no-USB power-key behavior.
+- The local official source tree remains dirty, but product build exports git
+  HEAD only and now reports that fact.
+
+Known risks/blockers:
+
+- The idle keepalive/control-channel code remains present as an explicit gated
+  path; it must not be default-enabled again without foreground trace evidence.
+- The environment repair touched local Homebrew Python signing state, not A21
+  source control. If a new machine lacks ESP-IDF `idf5.5_py3.14_env`, it still
+  needs normal ESP-IDF install/bootstrap.
+
+Recommended next action:
+
+- Commit this stabilization, then only if the operator wants a new candidate,
+  run the guarded official-compatible product flash lane and collect physical
+  voice/touch/power evidence.
+
+Tests/build/runtime results:
+
+- `go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract|OfficialStackChan|DiscoverStackChanOfficialDepCache|HydrateStackChanOfficialDependenciesFromCache' -count=1` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Default `make a21-stackchan-official-xiaozhi-compatible-build` passed without
+  manually setting `A21_STACKCHAN_OFFICIAL_DEP_CACHE`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260606-041046-1780690246520189000.json`.
+- Product app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `174c239320ede8d354bc81df43e74517f35473805c8100693327bc3184bbd151`.
+
+Forbidden actions avoided:
+
+- No product flash, no NVS write, no ECS deploy, no provider/V21 execution, no
+  generic `xiaozhi.bin` product lane, no Git prune/gc, and no rollback of
+  internal-test3 voice/protocol changes.
 
 ## 2026-06-06 01:15 CST - Atomic Feature Review Ledger Added
 

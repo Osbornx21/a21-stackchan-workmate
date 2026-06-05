@@ -18,6 +18,35 @@ Latest control-ledger update, 2026-06-06 01:15 CST:
   `T-A21-CONTROL-DOC-REFRESH-001`, followed by the active P0 stabilization
   transitions.
 
+Latest firmware overlay/build stabilization update, 2026-06-06 04:10 CST:
+
+- Completed local transition
+  `T-A21-OFFICIAL-OVERLAY-BUILD-STABILIZATION-001`.
+- Default official-compatible product build now auto-uses the local official
+  StackChan dependency cache when fetched dependency repos are present, avoiding
+  live GitHub dependency fetch as the default path.
+- The local ESP-IDF build path was hardened to prefer
+  `$HOME/.espressif/python_env/idf5.5_py3.14_env` and
+  `PYTHONDONTWRITEBYTECODE=1` after the machine's Homebrew Python framework
+  signature break caused `python3 --version` to be killed by macOS.
+- The official-compatible product overlay now leaves
+  `CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL` disabled by default. The gated
+  keepalive/control-channel implementation remains present but must not be
+  default-enabled without foreground voice-loop trace evidence.
+- Screen and top touch no longer auto-call `HandleStartListeningEvent()`.
+  Touch still provides local RGB/servo/sound feedback and product touch events
+  after Gateway allowance.
+- Verification passed:
+  focused official overlay/cache tests, `git diff --check`,
+  `GOMAXPROCS=2 make verify`, and
+  `make a21-stackchan-official-xiaozhi-compatible-build`.
+- Current build-ready product artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `174c239320ede8d354bc81df43e74517f35473805c8100693327bc3184bbd151`.
+- No flash/NVS/ECS/provider execution occurred in this transition. Next state
+  is guarded product flash plus physical wake/touch/power acceptance only if
+  the operator chooses to test this candidate.
+
 ## Stabilization Override
 
 Active override transition:
@@ -44,7 +73,9 @@ Latest P0 voice-loop RCA:
 `docs/engineering/A21_P0_VOICE_LOOP_RCA_20260605.md`.
 
 Active transition:
-`T-XIAOZHI-MANUAL-START-OFFICIAL-MODE-PARITY-001`.
+`T-A21-P0-VOICE-LOOP-RCA-001` with latest local completed candidate
+`T-A21-OFFICIAL-OVERLAY-BUILD-STABILIZATION-001`; next action is guarded
+flash/physical acceptance or further RCA from traces, not broad feature work.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence

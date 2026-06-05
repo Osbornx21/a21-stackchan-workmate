@@ -485,6 +485,11 @@ func runStackChanOfficialBaseline(args []string, stdout io.Writer, stderr io.Wri
 			options.SourceRoot = discovered
 		}
 	}
+	if options.DepCache == "" {
+		if depCache, ok := discoverStackChanOfficialDepCache(options.SourceRoot); ok {
+			options.DepCache = depCache
+		}
+	}
 	if err := normalizeOfficialOverlayPaths(&options); err != nil {
 		fmt.Fprintf(stderr, "stackchan official baseline overlay path invalid: %v\n", err)
 		return 1
@@ -3178,7 +3183,20 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 		report.fail("idf_export_missing", "ESP-IDF export.sh is missing")
 		return
 	}
-	buildScript := fmt.Sprintf("set -euo pipefail\nsource %q >/dev/null\nidf.py -C %q -B %q build", options.IDFExport, filepath.Join(options.WorkDir, "firmware"), options.BuildDir)
+	buildScript := fmt.Sprintf(`set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
+if [ -z "${IDF_PYTHON_ENV_PATH:-}" ]; then
+  for candidate in "$HOME/.espressif/python_env/idf5.5_py3.14_env" "$HOME/.espressif/python_env/idf5.5_py3.13_env"; do
+    if [ -x "$candidate/bin/python" ]; then
+      export IDF_PYTHON_ENV_PATH="$candidate"
+      export ESP_PYTHON="$candidate/bin/python"
+      export PATH="$candidate/bin:$PATH"
+      break
+    fi
+  done
+fi
+source %q >/dev/null
+idf.py -C %q -B %q build`, options.IDFExport, filepath.Join(options.WorkDir, "firmware"), options.BuildDir)
 	if err := runLoggedCommand(ctx, "", buildLog, "bash", "-lc", buildScript); err != nil {
 		report.fail("idf_build_failed", "official ESP-IDF build failed")
 		return
@@ -3225,14 +3243,9 @@ type stackChanOfficialRepoConfig struct {
 }
 
 func hydrateStackChanOfficialDependenciesFromCache(workDir string, cacheRoot string) error {
-	reposPath := filepath.Join(workDir, "firmware", "repos.json")
-	data, err := os.ReadFile(reposPath)
+	repos, err := loadStackChanOfficialRepoConfig(filepath.Join(workDir, "firmware", "repos.json"))
 	if err != nil {
-		return fmt.Errorf("read official repos.json: %w", err)
-	}
-	var repos []stackChanOfficialRepoConfig
-	if err := json.Unmarshal(data, &repos); err != nil {
-		return fmt.Errorf("parse official repos.json: %w", err)
+		return err
 	}
 	if len(repos) == 0 {
 		return fmt.Errorf("official repos.json has no dependencies")
@@ -3274,6 +3287,38 @@ func hydrateStackChanOfficialDependenciesFromCache(workDir string, cacheRoot str
 		}
 	}
 	return nil
+}
+
+func loadStackChanOfficialRepoConfig(reposPath string) ([]stackChanOfficialRepoConfig, error) {
+	data, err := os.ReadFile(reposPath)
+	if err != nil {
+		return nil, fmt.Errorf("read official repos.json: %w", err)
+	}
+	var repos []stackChanOfficialRepoConfig
+	if err := json.Unmarshal(data, &repos); err != nil {
+		return nil, fmt.Errorf("parse official repos.json: %w", err)
+	}
+	return repos, nil
+}
+
+func discoverStackChanOfficialDepCache(sourceRoot string) (string, bool) {
+	sourceRoot = strings.TrimSpace(sourceRoot)
+	if sourceRoot == "" {
+		return "", false
+	}
+	repos, err := loadStackChanOfficialRepoConfig(filepath.Join(sourceRoot, "firmware", "repos.json"))
+	if err != nil || len(repos) == 0 {
+		return "", false
+	}
+	for _, repo := range repos {
+		if repo.Path == "" || filepath.IsAbs(repo.Path) || strings.Contains(repo.Path, "..") || containsLegacyIdentityPathToken(repo.Path) {
+			return "", false
+		}
+		if _, err := resolveStackChanOfficialCacheRepo(sourceRoot, repo.Path); err != nil {
+			return "", false
+		}
+	}
+	return sourceRoot, true
 }
 
 func resolveStackChanOfficialCacheRepo(cacheRoot string, repoPath string) (string, error) {

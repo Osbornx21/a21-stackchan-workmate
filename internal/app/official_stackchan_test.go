@@ -178,6 +178,31 @@ func TestHydrateStackChanOfficialDependenciesFromCacheRejectsWrongRef(t *testing
 	}
 }
 
+func TestDiscoverStackChanOfficialDepCacheUsesSourceWithFetchedRepos(t *testing.T) {
+	source := writeTestOfficialStackChanRepo(t, true)
+	repoDir := filepath.Join(source, "firmware", "xiaozhi-esp32")
+	runGitForTest(t, repoDir, "init")
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=A21 Test", "-c", "user.email=a21@example.invalid", "commit", "-m", "cached xiaozhi")
+	runGitForTest(t, repoDir, "tag", "v2.2.4")
+
+	depCache, ok := discoverStackChanOfficialDepCache(source)
+	if !ok {
+		t.Fatal("expected source tree with fetched dependency repos to be accepted as dep cache")
+	}
+	if depCache != source {
+		t.Fatalf("dep cache = %q, want %q", depCache, source)
+	}
+}
+
+func TestDiscoverStackChanOfficialDepCacheRejectsIncompleteSource(t *testing.T) {
+	source := writeTestOfficialStackChanRepo(t, true)
+
+	if depCache, ok := discoverStackChanOfficialDepCache(source); ok {
+		t.Fatalf("dep cache = %q, want incomplete source to fall back to fetch_repos.py", depCache)
+	}
+}
+
 func TestRunStackChanOfficialXiaozhiCompatiblePlanReportsProductCandidateContract(t *testing.T) {
 	source := writeTestOfficialStackChanRepo(t, true)
 	overlay := filepath.Join("firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
@@ -278,7 +303,7 @@ func TestOfficialXiaozhiCompatibleOverlayUsesOfficialFrontendThenA21AgentRuntime
 		`return CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL;`,
 		`/stackChan/ws?deviceType=StackChan&device_id={}`,
 		`CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y`,
-		`CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y`,
+		`# CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL is not set`,
 		`CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y`,
 		`CONFIG_A21_PRODUCT_TOUCH_EVENTS=y`,
 	} {
@@ -295,6 +320,10 @@ func TestOfficialXiaozhiCompatibleOverlayUsesOfficialFrontendThenA21AgentRuntime
 		`diff --git a/firmware/main/apps/app_setup/`,
 		`+        WriteReg(0x27, 0x10);`,
 		`AddAuth(ssid, password)`,
+		`protocol_->SendA21TouchEvent("screen_tap", "screen");
++    HandleStartListeningEvent();`,
+		`protocol_->SendA21TouchEvent("top_tap", "top_sensor");
++            HandleStartListeningEvent();`,
 	} {
 		if strings.Contains(overlay, forbidden) {
 			t.Fatalf("official frontend/Wi-Fi/PMIC timing must remain official before AI.AGENT entry; found %q", forbidden)
@@ -434,7 +463,7 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 	}
 }
 
-func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
+func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketExplicitlyGated(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get cwd: %v", err)
@@ -448,7 +477,7 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 	overlay := string(data)
 
 	for _, required := range []string{
-		`CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y`,
+		`# CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL is not set`,
 		`config A21_STACKCHAN_KEEP_CONTROL_CHANNEL`,
 		`a21_ready_notified_`,
 		`a21_control_retry_notified_`,
@@ -470,8 +499,11 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 		`state != kDeviceStateConnecting && !(state == kDeviceStateIdle && protocol_->IsAudioChannelOpened())`,
 	} {
 		if !strings.Contains(overlay, required) {
-			t.Fatalf("official Xiaozhi-compatible overlay missing A21 idle socket contract %q", required)
+			t.Fatalf("official Xiaozhi-compatible overlay missing A21 gated idle socket contract %q", required)
 		}
+	}
+	if strings.Contains(overlay, `CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y`) {
+		t.Fatal("A21 idle control channel must not be enabled by default in the product overlay")
 	}
 	targetedWakeInvokeHunk := strings.Join([]string{
 		` void Application::ContinueWakeWordInvoke(const std::string& wake_word) {`,

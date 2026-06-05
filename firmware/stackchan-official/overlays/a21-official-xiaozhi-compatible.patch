@@ -262,7 +262,7 @@ index 4db623a..913da03 100644
 +CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y
 +# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set
 +# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set
-+CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y
++# CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL is not set
 +CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y
 +CONFIG_A21_PRODUCT_TOUCH_EVENTS=y
 +# CONFIG_WAKE_WORD_DISABLED is not set
@@ -525,7 +525,6 @@ index 3b6f07e..ffbf932 100644
 +        return;
 +    }
 +    protocol_->SendA21TouchEvent("screen_tap", "screen");
-+    HandleStartListeningEvent();
 +#endif
 +}
 +
@@ -558,7 +557,6 @@ index 3b6f07e..ffbf932 100644
 +            }
 +            ApplyA21TouchLocalFeedback("top_tap");
 +            protocol_->SendA21TouchEvent("top_tap", "top_sensor");
-+            HandleStartListeningEvent();
 +            return;
 +        default:
 +            return;
@@ -814,7 +812,7 @@ index 470cc91..257bfdf 100644
  }
 
 +bool Protocol::SendA21Keepalive() {
-+#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
 +    if (!a21_product_keepalive_events_allowed_) {
 +        return true;
 +    }
@@ -979,7 +977,7 @@ index f0cc034..bc457f2 100644
 
  WebsocketProtocol::WebsocketProtocol() {
      event_group_handle_ = xEventGroupCreate();
-+#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
 +    esp_timer_create_args_t a21_keepalive_timer_args = {
 +        .callback = [](void* arg) {
 +            auto* protocol = static_cast<WebsocketProtocol*>(arg);
@@ -1010,7 +1008,7 @@ index f0cc034..bc457f2 100644
  }
 
  WebsocketProtocol::~WebsocketProtocol() {
-+#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
 +    if (a21_keepalive_timer_handle_ != nullptr) {
 +        esp_timer_stop(a21_keepalive_timer_handle_);
 +        esp_timer_delete(a21_keepalive_timer_handle_);
@@ -1023,7 +1021,7 @@ index f0cc034..bc457f2 100644
 
  void WebsocketProtocol::CloseAudioChannel(bool send_goodbye) {
      (void)send_goodbye;  // Websocket doesn't need to send goodbye message
-+#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
 +    if (a21_keepalive_timer_handle_ != nullptr) {
 +        esp_timer_stop(a21_keepalive_timer_handle_);
 +    }
@@ -1037,7 +1035,9 @@ index f0cc034..bc457f2 100644
      cJSON_AddBoolToObject(features, "mcp", true);
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
 +    cJSON_AddBoolToObject(features, "playback_events", true);
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
 +    cJSON_AddBoolToObject(features, "keepalive_events", true);
++#endif
 +#endif
 +#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
 +    cJSON_AddBoolToObject(features, "touch_events", true);
@@ -1066,11 +1066,17 @@ index f0cc034..bc457f2 100644
 +    if (cJSON_IsObject(a21)) {
 +        auto profile = cJSON_GetObjectItem(a21, "profile");
 +        auto playback_events = cJSON_GetObjectItem(a21, "playback_events");
-+        auto keepalive_events = cJSON_GetObjectItem(a21, "keepalive_events");
 +        a21_product_playback_events_allowed_ =
 +            cJSON_IsString(profile) &&
 +            strcmp(profile->valuestring, "product") == 0 &&
 +            cJSON_IsTrue(playback_events);
++    }
++#endif
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
++    auto a21_keepalive = cJSON_GetObjectItem(root, "a21");
++    if (cJSON_IsObject(a21_keepalive)) {
++        auto profile = cJSON_GetObjectItem(a21_keepalive, "profile");
++        auto keepalive_events = cJSON_GetObjectItem(a21_keepalive, "keepalive_events");
 +        a21_product_keepalive_events_allowed_ =
 +            cJSON_IsString(profile) &&
 +            strcmp(profile->valuestring, "product") == 0 &&
@@ -1114,7 +1120,7 @@ index 48bbc00..1895e90 100644
      EventGroupHandle_t event_group_handle_;
      std::unique_ptr<WebSocket> websocket_;
      int version_ = 1;
-+#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
 +    esp_timer_handle_t a21_keepalive_timer_handle_ = nullptr;
 +#endif
 
