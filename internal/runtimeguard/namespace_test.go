@@ -26,13 +26,14 @@ func TestAuditNamespacePathsRejectsLegacyRuntimePathsWithoutEchoingPath(t *testi
 		"cmd/a21/main.go",
 		"apps/x21-gateway/main.go",
 		"services/v21-gateway/main.go",
+		"internal/app/xiaozhi_v21_probe_01.go",
 	})
 
 	if report.Result.OK {
 		t.Fatal("Result.OK = true, want false")
 	}
-	if len(report.Result.Findings) != 2 {
-		t.Fatalf("findings = %d, want 2: %#v", len(report.Result.Findings), report.Result.Findings)
+	if len(report.Result.Findings) != 3 {
+		t.Fatalf("findings = %d, want 3: %#v", len(report.Result.Findings), report.Result.Findings)
 	}
 	for _, finding := range report.Result.Findings {
 		if finding.Code != "namespace_legacy_path" {
