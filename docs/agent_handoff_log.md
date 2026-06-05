@@ -19268,6 +19268,92 @@ Forbidden actions avoided:
   product flash lane, no Git prune/gc, and no rollback of internal-test3
   voice/protocol changes.
 
+## 2026-06-05 11:12 CST - Voice Loop Touch Feedback And PMIC Power-Key Recovery Flashed
+
+Round goal:
+
+- Resolve the operator-reported P0 regressions: custom wake self-loop during
+  playback, slow first audible response, missing screen/top touch RGB/body
+  feedback, and still-pending no-USB power-key behavior.
+
+Actual completed work:
+
+- Restored official Xiaozhi speaking-state wake semantics in the product
+  overlay: custom wake word detection is no longer forced on while TTS is
+  speaking; only AFE wake can remain active in speaking mode.
+- Enabled delayed fast ack by default for the cloud-edge product chain and
+  deployed that Gateway default to ECS `47.103.57.217`.
+- Added firmware-local touch feedback for screen and top-touch events:
+  StackChan RGB colors, guarded servo motion, and the existing vibration sound
+  now fire locally instead of depending on the voice WebSocket MCP path.
+- Aligned PMIC power-key timing back to official `REG27=0x00`, preserved
+  explicit `REG22` PWRON/OFFLEVEL power-off source handling, and enabled the
+  AXP2101 16s PWRON hardware shutdown fallback.
+- Attempted an A21 idle websocket exception for `CanEnterSleepMode()`, but did
+  not ship it because the overlay hunk was unstable and failed product compile.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `git diff --check` passed.
+- Focused app overlay tests passed:
+  `TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake`,
+  `TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly`,
+  `TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPowerKeyLifecycle`,
+  and the idle-socket/direct-start guards.
+- Focused Gateway tests passed for product touch reactions, delayed fast ack,
+  fast-ack abort suppression, and touch barge-in cancellation.
+- `GOMAXPROCS=2 make verify` passed before the first product flash.
+- Product build with dependency cache passed twice through
+  `a21-stackchan-official-xiaozhi-compatible-build`.
+- First guarded product flash from commit `843e4cc` passed with app SHA-256
+  `84698ea172a1070adca45d29b005e87dca74e4a39cd8f22ba7558797dc9d261f`.
+- Remote ECS focused tests/build passed, `/opt/a21.next` safe swap completed,
+  and `a21-gateway` restarted active with
+  `A21_XIAOZHI_FAST_ACK_ENABLED=true` and
+  `A21_XIAOZHI_FAST_ACK_DELAY_MS=700`.
+- Second guarded product flash from commit `8fdc95d` passed with app SHA-256
+  `568da12f52bc050b3512c3ac71d5f3afd02f1fa6bd9debd89afe208efc1fe53b`.
+
+Runtime or physical evidence:
+
+- Public Gateway heartbeat updated after the second flash.
+- Official relay reconnected through `stackchan_official_ws`.
+- Post-flash official motion control trace
+  `a21-trace-post-pmic-flash-official-motion` returned `status=delivered`.
+- Physical acceptance is still intentionally false until the operator confirms
+  wake sensitivity/no self-loop, fast audible reply, touch RGB/body/sound, and
+  no-USB power key cold boot/shutdown.
+
+Known risks/blockers:
+
+- No-USB power-key acceptance is not closed. Firmware now has PMIC parity and
+  a hardware long-press fallback, but cold boot/shutdown requires foreground
+  confirmation and may still expose battery or hardware wiring issues.
+- The idle power-save exception for a quiet open websocket is not shipped; it
+  needs a separate clean overlay design if idle auto-shutdown remains blocked.
+
+Recommended next action:
+
+- Operator foreground test now: wake word while silent, wake/barge-in during
+  TTS to verify no self-loop, first reply latency, screen and top touch local
+  RGB/servo/sound feedback, then unplug USB and test battery power-key
+  shutdown/cold boot.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
+  firmware, no Git prune/gc, and no rollback of internal-test3 voice/protocol
+  changes.
+
 ## 2026-06-05 10:20 CST - StackChan Casefold Recovery Deployed
 
 Round goal:

@@ -11,7 +11,45 @@ are the project memory.
 
 Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-WORKSPACE-HARDWARE-FULL-CHECK-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-PACED-MACHINE-EVIDENCE-READY-BODY-SCENE-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-VOICE-MODE-HARDWARE-RITUAL-PACED-DEPLOYED-VOICE-MODE-RITUAL-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-HARDWARE-ACCEPTANCE-SUMMARY-BOARD-DEPLOYED-CONNECTED-HARDWARE-AUTO-ADOPTION-DEPLOYED-PRODUCT-OFFICIAL-COMPATIBLE-FLASHED-AFTER-FLASH-BODY-EVIDENCE-READY-PHYSICAL-PENDING-PRODUCT-DIRECT-START-WDT-SAFE-RESTORED-GATEWAY-XIAOZHI-REVIEW-REMEDIATED-POWER-LIFECYCLE-STATE-MACHINE-DEPLOYED-STACKCHAN-PMIC-POWER-KEY-PARITY-FLASHED-NO-CABLE-POWER-PHYSICAL-PENDING-STOCK-PROFESSIONAL-ROUTE-MODE-GATED-SERVER-SIDE-CANDIDATE-READY-OFFICIAL-STACKCHAN-RELAY-RUNTIME-BUILD-READY-GUARDED-MANUAL-BOOTLOADER-FLASH-READY-PHYSICAL-ROM-DOWNLOAD-PENDING-SERVER-SIDE-CANDIDATE-RECONFIRMED-READINESS-REMOTE-CONTEXT-ALIGNED-WAKE-PHYSICAL-LAUNCH-GATE-ENFORCED-PRODUCT-FLASH-WAIT-ROM-GUARD-READY-PRODUCT-FLASH-ROM-DIAGNOSTIC-READY-OFFICIAL-STACKCHAN-RELAY-STATUS-SURFACE-READY-PRODUCT-ROM-DOWNLOAD-STILL-PENDING-PRODUCT-RECOVERY-PRECHECK-READY-OFFICIAL-STACKCHAN-BACKEND-MCP-FALLBACK-READY-XIAOZHI-PRODUCT-STT-SCREEN-AND-FAST-ACK-GUARD-READY-STACKCHAN-PRODUCT-RECOVERY-EXECUTOR-READY-POWER-LIFECYCLE-COLD-BOOT-EVIDENCE-GUARD-READY-STACKCHAN-SYS-EVT-BOOT-LOOP-RECOVERED-OFFICIAL-AVATAR-RELAY-CONNECTED-SERIAL-EVIDENCE-READY-STACKCHAN-DEVICE-ID-CASEFOLD-RECOVERY-DEPLOYED-PRODUCT-ONLINE-OFFICIAL-RELAY-READY`
 
-Latest control update, 2026-06-05 10:20 CST:
+Latest control update, 2026-06-05 11:12 CST:
+
+- Responded to the foreground P0 regression report covering voice self-loop,
+  delayed replies, no-USB power-key behavior, and missing touch/RGB/body
+  feedback.
+- Commit `843e4cc fix(stackchan): stabilize voice state and touch feedback`
+  restored Xiaozhi official speaking-state wake semantics so custom wake word
+  detection is not forced on during TTS playback, enabled delayed fast ack by
+  default for the cloud-edge product chain, and added firmware-local
+  touch feedback through StackChan RGB, servo motion, and the vibration sound.
+- Product firmware build passed through the official-compatible lane and was
+  guarded-flashed on `/dev/cu.usbmodem1101` with app SHA-256
+  `84698ea172a1070adca45d29b005e87dca74e4a39cd8f22ba7558797dc9d261f`.
+- ECS `47.103.57.217` was deployed from commit `843e4cc` through the
+  `/opt/a21.next` safe-swap path. Remote focused tests and build passed,
+  `a21-gateway` restarted active, and runtime env explicitly has
+  `A21_XIAOZHI_FAST_ACK_ENABLED=true` and
+  `A21_XIAOZHI_FAST_ACK_DELAY_MS=700`.
+- Commit `8fdc95d fix(stackchan): align PMIC power key timing` then aligned
+  StackChan PMIC power-key timing back to official `REG27=0x00`, preserved the
+  explicit `REG22` PWRON/OFFLEVEL power-off source handling, and enabled the
+  AXP2101 16s PWRON hardware shutdown fallback.
+- The second product firmware build passed and was guarded-flashed on
+  `/dev/cu.usbmodem1101` with app SHA-256
+  `568da12f52bc050b3512c3ac71d5f3afd02f1fa6bd9debd89afe208efc1fe53b`.
+- After the second flash, public Gateway heartbeat updated, official relay
+  reconnected through `stackchan_official_ws`, and a post-flash
+  `/v1/stackchan/official/control` motion command returned `status=delivered`
+  with trace `a21-trace-post-pmic-flash-official-motion`.
+- Physical acceptance remains pending and must be performed in the foreground:
+  wake sensitivity/no self-loop, first audible reply timing, screen/top-touch
+  local RGB/servo/sound feedback, and no-USB power key cold boot/shutdown.
+- The attempted A21 idle websocket exception for `CanEnterSleepMode()` was not
+  shipped because it created an unstable overlay hunk and failed product
+  compile; the current flashed power fix is PMIC-only plus official timing.
+- No generic `xiaozhi.bin` product flash, NVS write, provider-key firmware
+  change, Git prune/gc, or internal-test3 protocol rollback occurred.
+
+Previous control update, 2026-06-05 10:20 CST:
 
 - Fresh serial capture after firmware recovery showed repeated official avatar
   relay heartbeat pings at roughly 400 seconds uptime and no `sys_evt` stack
