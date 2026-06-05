@@ -16,6 +16,19 @@ index dbe9da5..2adc52c 100644
  include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 -project(stack-chan)
 +project(a21-stackchan-official-xiaozhi-compatible)
+diff --git a/firmware/dependencies.lock b/firmware/dependencies.lock
+index 325d398..d3ce18d 100644
+--- a/firmware/dependencies.lock
++++ b/firmware/dependencies.lock
+@@ -779,7 +779,7 @@ dependencies:
+   idf:
+     source:
+       type: idf
+-    version: 5.5.4
++    version: 5.5.2
+   lvgl/lvgl:
+     component_hash: 17e68bfd21f0edf4c3ee838e2273da840bf3930e5dbc3bfa6c1190c3aed41f9f
+     dependencies: []
 diff --git a/firmware/main/Kconfig.projbuild b/firmware/main/Kconfig.projbuild
 index 304e48d..b9adb2a 100644
 --- a/firmware/main/Kconfig.projbuild
@@ -149,10 +162,29 @@ index 7349b14..b8903b5 100644
  i2c_master_bus_handle_t hal_bridge::board_get_i2c_bus()
  {
 diff --git a/firmware/main/hal/hal.cpp b/firmware/main/hal/hal.cpp
-index fded31d..e001ebc 100644
+index fded31d..4366b31 100644
 --- a/firmware/main/hal/hal.cpp
 +++ b/firmware/main/hal/hal.cpp
-@@ -287,15 +287,26 @@ static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
+@@ -196,6 +196,18 @@ void Hal::startXiaozhi()
+         hal_bridge::app_play_sound(OGG_NEW_NOTIFICATION);
+     });
+
++    onWsAvatarData.clear();
++    onWsAvatarData.connect([](std::string_view data) {
++        LvglLockGuard lock;
++        GetStackChan().updateAvatarFromJson(data.data());
++    });
++    onWsMotionData.clear();
++    onWsMotionData.connect([](std::string_view data) {
++        LvglLockGuard lock;
++        GetStackChan().updateMotionFromJson(data.data());
++    });
++    startWebSocketAvatarService(nullptr);
++
+     // Start stackchan update task
+     xTaskCreatePinnedToCore(_stackchan_update_task, "stackchan", 4096, NULL, 3, NULL, 1);
+
+@@ -287,15 +299,26 @@ static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
      // mclog::tagInfo(_tag, "touchpoint: {}, x: {}, y: {}", bridge_data.touchPoint.num, bridge_data.touchPoint.x,
      //                bridge_data.touchPoint.y);
 
@@ -194,10 +226,19 @@ index 5f9efcf..cc670b6 100644
      void setRgbColor(uint8_t index, uint8_t r, uint8_t g, uint8_t b);
      void showRgbColor(uint8_t r, uint8_t g, uint8_t b);
 diff --git a/firmware/main/hal/hal_ws_avatar.cpp b/firmware/main/hal/hal_ws_avatar.cpp
-index 0fc43ec..7729a90 100644
+index 0fc43ec..d15a7ff 100644
 --- a/firmware/main/hal/hal_ws_avatar.cpp
 +++ b/firmware/main/hal/hal_ws_avatar.cpp
-@@ -63,7 +63,18 @@ public:
+@@ -23,6 +23,8 @@
+ #include <display.h>
+ #include <lvgl_image.h>
+ #include <wifi_manager.h>
++#include <freertos/FreeRTOS.h>
++#include <freertos/task.h>
+ #include "utils/jpeg_to_image/jpeg_decoder.h"
+ #include "utils/secret_logic/secret_logic.h"
+
+@@ -63,7 +65,18 @@ public:
 
      void init()
      {
@@ -217,6 +258,65 @@ index 0fc43ec..7729a90 100644
 
          connect();
 
+@@ -134,7 +147,7 @@ public:
+             _msg_queue.push({binary, std::vector<uint8_t>(data, data + len)});
+         });
+
+-        // ESP_LOGI(_tag.c_str(), "Connecting to %s...", _url.c_str());
++        ESP_LOGI(_tag.c_str(), "Connecting to %s...", _url.c_str());
+         // GetHAL().onWsLog.emit(CommonLogLevel::Info, "Connecting to server...");
+         if (!_websocket->Connect(_url.c_str())) {
+             ESP_LOGE(_tag.c_str(), "Failed to connect");
+@@ -146,6 +159,9 @@ public:
+     void update()
+     {
+         if (!_websocket) {
++            if (GetHAL().millis() - _last_reconnect_attempt > 5000) {
++                connect();
++            }
+             return;
+         }
+
+@@ -479,6 +495,18 @@ private:
+     }
+ };
+
++static TaskHandle_t _websocket_avatar_task_handle = nullptr;
++
++static void _websocket_avatar_task(void* param)
++{
++    auto service = std::make_unique<WebSocketAvatar>();
++    service->init();
++    while (1) {
++        service->update();
++        vTaskDelay(pdMS_TO_TICKS(20));
++    }
++}
++
+ class WebsocketAvatarWorker : public mooncake::BasicAbility {
+ public:
+     WebsocketAvatarWorker()
+@@ -514,8 +542,17 @@ void Hal::startWebSocketAvatarService(std::function<void(std::string_view)> onSt
+ {
+     mclog::tagInfo(_tag, "start websocket avatar service");
+
+-    startNetwork(onStartLog);
++    if (onStartLog) {
++        startNetwork(onStartLog);
++    }
+
+-    onStartLog("Connecting to\nserver...");
+-    mooncake::GetMooncake().extensionManager()->createAbility(std::make_unique<WebsocketAvatarWorker>());
++    if (_websocket_avatar_task_handle != nullptr) {
++        mclog::tagInfo(_tag, "websocket avatar service already started");
++        return;
++    }
++
++    if (onStartLog) {
++        onStartLog("Connecting to\nserver...");
++    }
++    xTaskCreatePinnedToCore(_websocket_avatar_task, "ws-avatar", 8192, NULL, 3, &_websocket_avatar_task_handle, 1);
+ }
 diff --git a/firmware/main/hal/utils/secret_logic/secret_logic.cpp b/firmware/main/hal/utils/secret_logic/secret_logic.cpp
 index 4dafb50..c9d8099 100644
 --- a/firmware/main/hal/utils/secret_logic/secret_logic.cpp
