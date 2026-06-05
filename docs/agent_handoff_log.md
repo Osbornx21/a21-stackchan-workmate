@@ -19267,3 +19267,74 @@ Forbidden actions avoided:
 - No firmware flash, no NVS write, no provider/V21 execution, no generic
   product flash lane, no Git prune/gc, and no rollback of internal-test3
   voice/protocol changes.
+
+## 2026-06-05 10:20 CST - StackChan Casefold Recovery Deployed
+
+Round goal:
+
+- Directly deploy the pushed StackChan MAC casefold fix to the public ECS
+  Gateway and verify that the product is online with official relay connected.
+
+Actual completed work:
+
+- Used SSH key `/Users/jiyurun/.ssh/x21_aliyun_stackchan` to access ECS
+  `i-uf63f4ymqc2dxtljxz2n` / `47.103.57.217`.
+- Transferred git archive of commit `7b32956` to the host and verified SHA-256
+  `97c78693a6dd1d97a242a497a198d38f79b3bc0e8cbd6e8b5a49b954a516f36b`.
+- Ran remote focused Gateway/App tests in `/opt/a21.next`.
+- Built `/opt/a21.next/bin/a21`, safe-swapped `/opt/a21.next` to `/opt/a21`,
+  and restarted `a21-gateway`.
+- Polled loopback status after restart until product Xiaozhi and official
+  relay reconnected.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-device-id-casefold-recovery.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Remote `GOMAXPROCS=2 go test ./internal/gateway ./internal/app -run 'OfficialStackChan|ProductRecovery|Xiaozhi|PowerLifecycle' -count=1` passed.
+- Remote `GOMAXPROCS=2 go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed.
+- Remote `a21-gateway` restarted active.
+- Loopback `/healthz` passed.
+- Ten post-restart polls showed one normalized lowercase product MAC record
+  online and lowercase official status connected with
+  `delivered_transport=stackchan_official_ws`.
+- Public direct-source status passed:
+  `/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60` returned
+  `connected=true` and `official_device_id=44:1b:f6:e2:6a:60`.
+- Public read-only product recovery precheck wrote
+  `reports/a21-stackchan-product-recovery-20260605-101947.json` with
+  `status=product_online_official_relay_ready`, `device_count=1`,
+  `device_online=true`, `official_relay.connected=true`, and
+  `rom_download_required=false`.
+
+Runtime or physical evidence:
+
+- Product runtime is online on public Gateway.
+- Official StackChan relay is connected on public Gateway.
+- Public `/v1/devices` observed live touch input after deploy:
+  `last_event=touch.top.swipe_forward`,
+  `last_touch_source=top_sensor`.
+
+Known risks/blockers:
+
+- This deployment does not mark full physical acceptance. Foreground validation
+  remains required for no-USB power-key boot, wake/listen/playback, barge-in,
+  and visible RGB/servo/touch/screen behavior.
+
+Recommended next action:
+
+- Run the foreground hardware acceptance sequence now that product socket and
+  official relay are both connected: screen stability, no-USB power key,
+  wake/listen/playback, barge-in, official action/body response, and touch
+  reaction checks.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no generic
+  product flash lane, no Git prune/gc, and no rollback of internal-test3
+  voice/protocol changes.

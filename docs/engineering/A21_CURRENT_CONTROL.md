@@ -72,8 +72,8 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
-Live truth after the 2026-06-05 10:04 CST StackChan device-id casefold recovery
-transition:
+Live truth after the 2026-06-05 10:20 CST StackChan device-id casefold recovery
+deployment:
 
 - Fresh serial evidence after the firmware recovery showed the device remained
   running around the 400 second uptime mark with repeated official avatar relay
@@ -101,6 +101,28 @@ transition:
 - This is a server-side state-machine/status fix. It does not flash firmware,
   write NVS, execute provider/V21, perform Git prune/gc, or mark physical
   no-USB power-key/full PRD acceptance.
+- Commit `7b32956 fix(gateway): normalize stackchan hardware mac ids` was
+  pushed and deployed directly over SSH to ECS
+  `i-uf63f4ymqc2dxtljxz2n` / `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path.
+- Remote source archive SHA-256:
+  `97c78693a6dd1d97a242a497a198d38f79b3bc0e8cbd6e8b5a49b954a516f36b`.
+- Remote focused Gateway/App tests passed in `/opt/a21.next`, remote build
+  passed, `/opt/a21.next` was safe-swapped to `/opt/a21`, and
+  `a21-gateway` restarted active with loopback `/healthz` ok.
+- Post-deploy polling showed `/v1/devices` has one normalized lowercase product
+  MAC record with `connection_status=online`, and lowercase
+  `/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60` returns
+  `connected=true`, `official_device_id=44:1b:f6:e2:6a:60`, and
+  `delivered_transport=stackchan_official_ws`.
+- Public read-only product recovery precheck wrote
+  `reports/a21-stackchan-product-recovery-20260605-101947.json` with
+  `status=product_online_official_relay_ready`, `device_count=1`,
+  `device_online=true`, `official_relay.connected=true`, and
+  `rom_download_required=false`.
+- Public `/v1/devices` also observed live touch input after deploy:
+  `last_event=touch.top.swipe_forward`,
+  `last_touch_source=top_sensor`.
 
 Live truth after the 2026-06-05 09:54 CST StackChan sys_evt boot-loop recovery
 and official avatar relay reconnect transition:

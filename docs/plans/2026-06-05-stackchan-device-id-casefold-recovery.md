@@ -1,6 +1,7 @@
 # 2026-06-05 - StackChan Device ID Casefold Recovery
 
-Status: implemented locally, verified, pending commit and ECS deployment.
+Status: implemented, verified, committed, pushed, deployed to ECS, and public
+post-deploy verified.
 Transition: `T-STACKCHAN-DEVICE-ID-CASEFOLD-RECOVERY-001`.
 
 ## Problem
@@ -52,6 +53,32 @@ select the uppercase stale record before seeing the lowercase online record.
 - ECS deployment and public post-deploy smoke must show lowercase
   `/v1/stackchan/official/status` connected and product recovery no longer
   classifies this as ROM/download recovery while the device is online.
+
+## Deployment Result
+
+- Commit `7b32956 fix(gateway): normalize stackchan hardware mac ids` was
+  pushed to
+  `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+- Deployed directly over SSH using
+  `/Users/jiyurun/.ssh/x21_aliyun_stackchan` to ECS
+  `i-uf63f4ymqc2dxtljxz2n` / `47.103.57.217`.
+- Source archive SHA-256:
+  `97c78693a6dd1d97a242a497a198d38f79b3bc0e8cbd6e8b5a49b954a516f36b`.
+- Remote focused tests passed in `/opt/a21.next`:
+  `GOMAXPROCS=2 go test ./internal/gateway ./internal/app -run 'OfficialStackChan|ProductRecovery|Xiaozhi|PowerLifecycle' -count=1`.
+- Remote build passed:
+  `GOMAXPROCS=2 go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- `/opt/a21.next` was safe-swapped to `/opt/a21`, `a21-gateway` restarted
+  active, and loopback `/healthz` passed.
+- Post-deploy loopback and public checks show one normalized lowercase MAC
+  device record, `connection_status=online`, and lowercase official status
+  `connected=true`, `official_device_id=44:1b:f6:e2:6a:60`,
+  `delivered_transport=stackchan_official_ws`.
+- Local public recovery precheck wrote
+  `reports/a21-stackchan-product-recovery-20260605-101947.json` with
+  `status=product_online_official_relay_ready`,
+  `device_count=1`, `device_online=true`, `official_relay.connected=true`,
+  and `rom_download_required=false`.
 
 ## Forbidden
 
