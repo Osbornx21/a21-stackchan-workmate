@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -263,6 +264,7 @@ func mustJSON(t *testing.T, value any) string {
 }
 
 type fakeRealtimeConn struct {
+	mu             sync.Mutex
 	messages       []map[string]any
 	serverMessages []map[string]any
 	timeline       []string
@@ -279,6 +281,8 @@ func (c *fakeRealtimeConn) WriteJSON(_ context.Context, value any) error {
 	if err := json.Unmarshal(encoded, &message); err != nil {
 		return err
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.messages = append(c.messages, message)
 	if eventType, _ := message["type"].(string); eventType != "" {
 		c.timeline = append(c.timeline, "write:"+eventType)
@@ -287,21 +291,27 @@ func (c *fakeRealtimeConn) WriteJSON(_ context.Context, value any) error {
 }
 
 func (c *fakeRealtimeConn) ReadJSON(_ context.Context, value any) error {
+	c.mu.Lock()
 	if c.readIndex >= len(c.serverMessages) {
+		c.mu.Unlock()
 		return io.EOF
 	}
 	encoded, err := json.Marshal(c.serverMessages[c.readIndex])
 	if err != nil {
+		c.mu.Unlock()
 		return err
 	}
 	c.readIndex++
 	if eventType, _ := c.serverMessages[c.readIndex-1]["type"].(string); eventType != "" {
 		c.timeline = append(c.timeline, "read:"+eventType)
 	}
+	c.mu.Unlock()
 	return json.Unmarshal(encoded, value)
 }
 
 func (c *fakeRealtimeConn) Close(_ context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.closed = true
 	return nil
 }

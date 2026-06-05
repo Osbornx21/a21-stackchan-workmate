@@ -6,10 +6,10 @@ Last updated: 2026-06-05.
 ## Stabilization Override
 
 Active override transition:
-`T-A21-STABILIZE-CONTROL-SURFACE-001`.
+`T-A21-P0-VOICE-LOOP-RCA-001`.
 
 Current override state:
-`S-CODE-FREEZE-INTERNAL-TEST4-BASELINE-PROTECTED`.
+`S-INTERNAL-TEST4-BASELINE-PROTECTED-P0-VOICE-RCA-IN-PROGRESS`.
 
 Internal test 4 is now the protected recovery baseline. Until P0 stabilization
 exits, no new feature work, product flash, provider chain change, side-branch
@@ -24,6 +24,9 @@ Active stabilization plan:
 
 Latest P0 power boot RCA:
 `docs/engineering/A21_P0_POWER_BOOT_RCA_20260605.md`.
+
+Latest P0 voice-loop RCA:
+`docs/engineering/A21_P0_VOICE_LOOP_RCA_20260605.md`.
 
 Active transition:
 `T-XIAOZHI-MANUAL-START-OFFICIAL-MODE-PARITY-001`.

@@ -131,6 +131,60 @@ Forbidden actions avoided:
 - No code changes, no product flash, no provider changes, no NVS writes, no
   PMIC register patch, and no worker dispatch.
 
+## 2026-06-05 20:05 CST - Provider Realtime Test Surface Stabilized
+
+Round goal:
+
+- Remove provider realtime test-harness concurrency noise before continuing
+  P0 voice-loop RCA.
+
+Actual completed work:
+
+- Reproduced the provider race under `go test -race`.
+- Isolated the race to `fakeRealtimeConn` shared test state rather than a
+  proven product runtime path.
+- Added mutex protection for the fake connection's messages, timeline, read
+  index, and close state.
+- Added the current P0 voice-loop RCA report and moved the stabilization
+  override to the voice-loop transition.
+
+Changed files:
+
+- `internal/providers/realtime_test.go`
+- `docs/engineering/A21_P0_VOICE_LOOP_RCA_20260605.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Physical or Gateway runtime trace is still required to prove the reported
+  self-answer loop source.
+- Wake-word sensitivity and first-answer latency remain unaccepted.
+- No-USB power-key evidence matrix and body-parity RCA remain queued.
+
+Known risks/blockers:
+
+- Passing focused tests does not prove the product symptom is resolved.
+- The next fix must be chosen from trace evidence, not by provider switching or
+  prompt rewrites.
+
+Recommended next action:
+
+- Capture one product voice session with wake/listen, binary audio, ASR final,
+  TTS first-byte, playback events, `tts.stop`, and any repeated listen/input
+  aligned by trace/session/device id.
+
+Tests/build/runtime results:
+
+- `GOMAXPROCS=2 go test -race ./internal/providers -count=1` passed.
+- `GOMAXPROCS=2 go test ./internal/gateway -run 'Xiaozhi|OfficialStackChan|PowerLifecycle|Playback|Barge|Listen' -count=1`
+  passed.
+
+Forbidden actions avoided:
+
+- No provider switch, no prompt rewrite, no firmware flash, no NVS write, no
+  ECS deploy, and no product behavior change.
+
 ## 2026-06-05 18:38 CST - Internal Test 4 Trial Hotspot NVS Updated
 
 Round goal:
