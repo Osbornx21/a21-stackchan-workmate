@@ -6871,7 +6871,7 @@ func TestXiaozhiProductTouchReactionsUseOfficialRelayNotXiaozhiMCP(t *testing.T)
 	}
 }
 
-func TestXiaozhiProductTouchReactionsDoNotFallbackToXiaozhiMCPWithoutOfficialRelay(t *testing.T) {
+func TestXiaozhiProductTouchReactionsFallbackToXiaozhiMCPWithoutOfficialRelay(t *testing.T) {
 	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
 		XiaozhiProductTouchEvents:    true,
 		XiaozhiProductTouchReactions: true,
@@ -6888,10 +6888,11 @@ func TestXiaozhiProductTouchReactionsDoNotFallbackToXiaozhiMCPWithoutOfficialRel
 	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
 
 	writeXiaozhiHello(t, ctx, conn, map[string]any{
-		"trace_id":   "a21-trace-xiaozhi-product-touch-no-mcp",
-		"session_id": "a21-session-xiaozhi-product-touch-no-mcp",
+		"trace_id":   "a21-trace-xiaozhi-product-touch-no-official-relay",
+		"session_id": "a21-session-xiaozhi-product-touch-no-official-relay",
 		"device_id":  "44:1b:f6:e2:6a:60",
 		"features": map[string]any{
+			"mcp":          true,
 			"aec":          true,
 			"touch_events": true,
 		},
@@ -6910,22 +6911,56 @@ func TestXiaozhiProductTouchReactionsDoNotFallbackToXiaozhiMCPWithoutOfficialRel
 		"kind":       "touch",
 		"touch":      "top_tap",
 		"source":     "top_sensor",
-		"trace_id":   "a21-trace-xiaozhi-product-touch-no-mcp",
-		"session_id": "a21-session-xiaozhi-product-touch-no-mcp",
+		"trace_id":   "a21-trace-xiaozhi-product-touch-no-official-relay",
+		"session_id": "a21-session-xiaozhi-product-touch-no-official-relay",
 		"device_id":  "44:1b:f6:e2:6a:60",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	ledMessage := readXiaozhiJSON(t, ctx, conn)
+	assertXiaozhiMCPMessage(t, ledMessage, xiaozhiMCPRobotSetLEDColorToolName, map[string]any{
+		"red":   float64(60),
+		"green": float64(0),
+		"blue":  float64(168),
+	})
+	headMessage := readXiaozhiJSON(t, ctx, conn)
+	assertXiaozhiMCPMessage(t, headMessage, xiaozhiMCPRobotSetHeadAnglesToolName, map[string]any{
+		"pitch": float64(68),
+		"speed": float64(680),
+	})
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-touch-no-official-relay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"device.touch.top.tap.received",
+		"xiaozhi.touch_reaction.official_ws_not_connected",
+		"xiaozhi.touch_reaction.xiaozhi_mcp_fallback.step1.robot_led_color.sent",
+		"xiaozhi.touch_reaction.xiaozhi_mcp_fallback.step2.robot_head_angles_set.sent",
+		"xiaozhi.touch_reaction.xiaozhi_mcp_fallback.sent",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
 	if registry["last_event"] != "touch.top.tap" || registry["last_touch_event"] != "touch.top.tap" {
 		t.Fatalf("registry touch without mcp = %#v", registry)
 	}
 	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
 	if !ok ||
-		runtimeEcho["last_touch_reaction_status"] != "failed_no_official_ws" ||
-		runtimeEcho["last_touch_reaction_transport"] != "stackchan_official_ws" {
-		t.Fatalf("registry runtime_echo without official relay = %#v, want failed_no_official_ws and no Xiaozhi MCP fallback", registry["runtime_echo"])
+		runtimeEcho["last_touch_reaction_status"] != "delivered" ||
+		runtimeEcho["last_touch_reaction_transport"] != "xiaozhi_mcp_sequence" ||
+		runtimeEcho["last_touch_reaction_fallback_reason"] != "official_ws_disconnected" ||
+		runtimeEcho["last_touch_reaction_steps"] != "2" {
+		t.Fatalf("registry runtime_echo without official relay = %#v, want Xiaozhi MCP fallback delivered", registry["runtime_echo"])
 	}
 }
 

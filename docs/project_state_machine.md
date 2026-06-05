@@ -4,7 +4,7 @@ Status: active state document.
 Last updated: 2026-06-05.
 
 Active transition:
-`T-XIAOZHI-OFFICIAL-AUTO-LISTEN-STATE-PARITY-001`.
+`T-XIAOZHI-AI-AGENT-BODY-MCP-FALLBACK-001`.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
@@ -47,6 +47,21 @@ Latest Gateway state-machine update, 2026-06-05 16:50 CST:
   a new barge-in when the official device immediately re-enters listening.
 - Focused Gateway tests and broad Xiaozhi/official StackChan tests passed
   before this state update; deployment to ECS is the next action.
+
+Latest AI.AGENT body update, 2026-06-05 17:05 CST:
+
+- Post-deploy public status showed the product Xiaozhi socket online but the
+  official `/stackChan/ws` relay disconnected, with fallback available.
+- Official StackChan source comparison found that the WebSocket avatar/body
+  relay is an `AppAvatar` ability. The official `AI.AGENT` path requests
+  Xiaozhi start, unloads Mooncake apps, and enters Xiaozhi runtime; therefore
+  `/stackChan/ws` is not a reliable body control surface inside `AI.AGENT`.
+- The Gateway candidate now keeps official relay as the first transport when
+  it is connected, but falls back to official Xiaozhi MCP robot tools
+  `self.robot.set_led_color` and `self.robot.set_head_angles` when the relay
+  is disconnected or delivery fails.
+- Focused Gateway tests passed for both official relay delivery and
+  AI.AGENT/Xiaozhi MCP fallback delivery.
 
 Latest foreground hardware-window update, 2026-06-05 16:11 CST:
 

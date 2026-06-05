@@ -9671,10 +9671,7 @@ func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xia
 	socket, officialDeviceID, ok := s.officialStackChanSocketForXiaozhiDevice(id.deviceID)
 	if !ok {
 		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.official_ws_not_connected", s.now().UnixMilli())
-		s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
-			"last_touch_reaction_status":    "failed_no_official_ws",
-			"last_touch_reaction_transport": "stackchan_official_ws",
-		})
+		s.deliverXiaozhiTouchMCPReaction(ctx, session, event, "official_ws_disconnected")
 		return
 	}
 	if ctx == nil {
@@ -9693,10 +9690,7 @@ func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xia
 			if err := socket.conn.Write(writeCtx, websocket.MessageBinary, packet.Bytes()); err != nil {
 				socket.writeMu.Unlock()
 				s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.official_ws_delivery_error", s.now().UnixMilli())
-				s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
-					"last_touch_reaction_status":    "failed_delivery_error",
-					"last_touch_reaction_transport": "stackchan_official_ws",
-				})
+				s.deliverXiaozhiTouchMCPReaction(ctx, session, event, "official_ws_delivery_error")
 				return
 			}
 			deliveredPackets++
@@ -9719,6 +9713,51 @@ func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xia
 		echo[key] = value
 	}
 	s.recordXiaozhiTouchReactionEcho(session, event, echo)
+}
+
+func (s *Server) deliverXiaozhiTouchMCPReaction(ctx context.Context, session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent, fallbackReason string) {
+	if session == nil {
+		return
+	}
+	id := session.identitySnapshot()
+	plans := xiaozhiTouchReactionPlans(session, event)
+	if len(plans) == 0 {
+		s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
+			"last_touch_reaction_status":          "failed_no_mcp_plan",
+			"last_touch_reaction_transport":       "xiaozhi_mcp_sequence",
+			"last_touch_reaction_fallback_reason": safeGatewayFallbackToken(fallbackReason, "unknown"),
+		})
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deliveredSteps := 0
+	for index, req := range plans {
+		delivery, status, _ := s.sendXiaozhiMCPControl(ctx, req)
+		if status != 0 {
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.xiaozhi_mcp_fallback.failed", s.now().UnixMilli())
+			s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
+				"last_touch_reaction_status":          "failed_mcp_" + strconv.Itoa(status),
+				"last_touch_reaction_transport":       "xiaozhi_mcp_sequence",
+				"last_touch_reaction_fallback_reason": safeGatewayFallbackToken(fallbackReason, "unknown"),
+				"last_touch_reaction_steps":           strconv.Itoa(deliveredSteps),
+			})
+			return
+		}
+		deliveredSteps++
+		genericMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
+		reactionMarker := "xiaozhi.touch_reaction.xiaozhi_mcp_fallback.step" + strconv.Itoa(index+1) + "." + delivery.Marker + ".sent"
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, genericMarker, s.now().UnixMilli())
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, reactionMarker, s.now().UnixMilli())
+	}
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.xiaozhi_mcp_fallback.sent", s.now().UnixMilli())
+	s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
+		"last_touch_reaction_status":          "delivered",
+		"last_touch_reaction_transport":       "xiaozhi_mcp_sequence",
+		"last_touch_reaction_fallback_reason": safeGatewayFallbackToken(fallbackReason, "unknown"),
+		"last_touch_reaction_steps":           strconv.Itoa(deliveredSteps),
+	})
 }
 
 func officialTouchReactionPlans(event xiaozhitransport.DeviceExtensionEvent) []stackchantransport.OfficialActionPlan {

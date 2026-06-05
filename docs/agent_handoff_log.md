@@ -20441,6 +20441,72 @@ Forbidden actions avoided:
   no generic product flash lane, no Git prune/gc, and no rollback of
   internal-test3 protocol changes.
 
+## 2026-06-05 17:05 CST - AI.AGENT Touch Body MCP Fallback Candidate
+
+Round goal:
+
+- Restore visible touch/RGB/servo body feedback in the real `AI.AGENT`
+  Xiaozhi runtime by comparing official StackChan app lifecycle instead of
+  assuming `/stackChan/ws` remains active after entering Xiaozhi.
+
+Actual completed work:
+
+- Verified after Gateway deploy that the product Xiaozhi socket is online while
+  official `/stackChan/ws` reports disconnected with MCP fallback available.
+- Read official StackChan `main.cpp`, `AppAiAgent`, `AppAvatar`, and
+  `hal_ws_avatar.cpp`.
+- Confirmed official behavior: `AppAvatar` owns the websocket avatar/body
+  relay, while `AI.AGENT` requests Xiaozhi start and then the firmware unloads
+  Mooncake apps before entering Xiaozhi runtime.
+- Updated Gateway touch reactions so official `/stackChan/ws` still wins when
+  connected, but disconnected/error relay states fall back to Xiaozhi MCP robot
+  tools.
+- Replaced the previous test that prohibited MCP fallback with a product test
+  proving AI.AGENT/no-relay touch reactions send `self.robot.set_led_color` and
+  `self.robot.set_head_angles`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused Gateway tests passed:
+  `XiaozhiProductTouchReactions(UseOfficialRelayNotXiaozhiMCP|FallbackToXiaozhiMCPWithoutOfficialRelay)|XiaozhiProductStateReactionsSendBoundedBodyMCP|XiaozhiMCPControlAcceptsOfficialStatusAndRobotTools`.
+- `git diff --check` passed.
+- Broader Gateway and `make verify` still need to run before commit.
+
+Runtime or physical evidence:
+
+- Public Gateway status before this code candidate: `/v1/devices` showed
+  product device `44:1b:f6:e2:6a:60` online on Xiaozhi with MCP support;
+  `/v1/stackchan/official/status` showed official relay disconnected and
+  fallback available.
+
+Known risks/blockers:
+
+- This candidate does not change firmware wake-word sensitivity or no-USB
+  PWRKEY cold boot.
+- Official relay is still useful in `AppAvatar` mode and remains the preferred
+  transport when connected.
+- Physical body acceptance must be repeated after ECS deploy by tapping screen
+  or top touch inside `AI.AGENT`.
+
+Recommended next action:
+
+- Run broad Gateway tests and `GOMAXPROCS=2 make verify`, commit, push, deploy
+  to ECS, then ask operator to tap top/screen touch in `AI.AGENT` and observe
+  RGB plus stronger head movement.
+
+Forbidden actions avoided:
+
+- No firmware flash, no PMIC write, no NVS write, no provider key in firmware,
+  no generic product flash lane, no Git prune/gc, and no rollback of
+  internal-test3 protocol changes.
+
 ## 2026-06-05 11:12 CST - Voice Loop Touch Feedback And PMIC Power-Key Recovery Flashed
 
 Round goal:
