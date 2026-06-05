@@ -4,8 +4,8 @@ dist/
 .a21-run/
 .a21-tmp/
 .a21-tools/
-a21
-a21-lab
+/a21
+/a21-lab
 .pio/
 firmware/**/.pio/
 firmware/artifacts/
