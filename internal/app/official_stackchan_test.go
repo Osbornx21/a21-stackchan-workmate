@@ -231,7 +231,7 @@ func TestApplyStackChanOfficialCandidateContractKeepsXiaozhiCompatibleAfterExecu
 	}
 }
 
-func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTeardown(t *testing.T) {
+func TestOfficialXiaozhiCompatibleOverlayPreservesOfficialLauncherEntryLifecycle(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get cwd: %v", err)
@@ -244,52 +244,22 @@ func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTear
 	}
 	overlay := string(data)
 
-	for _, required := range []string{
-		`Board::GetInstance().GetAudioCodec()`,
-		`codec->SetOutputVolume(92);`,
+	for _, forbidden := range []string{
+		`A21_OEM_AUTOSTART_XIAOZHI`,
+		`diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp`,
 		`a21_start_avatar_relay_task`,
-		`xTaskCreate(a21_start_avatar_relay_task`,
-		`GetHAL().delay(12000);`,
 		`A21 starting Xiaozhi mode directly after official apps preload`,
-		`GetHAL().startXiaozhi();`,
-		`A21 starting official StackChan avatar relay runtime`,
-		`GetHAL().startA21WebSocketAvatarRuntime`,
-		`GetHAL().updateA21WebSocketAvatarRuntime();`,
-		`GetHAL().feedTheDog();`,
-		`GetHAL().delay(20);`,
+		`+    GetHAL().startXiaozhi();`,
+		`+    GetHAL().requestXiaozhiStart();`,
+		`+        GetHAL().feedTheDog();`,
 	} {
-		if !strings.Contains(overlay, required) {
-			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("official Xiaozhi-compatible overlay must preserve official launcher/setup lifecycle; found %q", forbidden)
 		}
-	}
-	if strings.Contains(overlay, "-    GetHAL().startXiaozhi()") {
-		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
-	}
-	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
-	scheduleAvatarIndex := strings.Index(overlay, `+    xTaskCreate(a21_start_avatar_relay_task`)
-	startRuntimeIndex := strings.Index(overlay, `+    GetHAL().startXiaozhi();`)
-	taskDelayIndex := strings.Index(overlay, `+    GetHAL().delay(12000);`)
-	startAvatarIndex := strings.Index(overlay, `+    GetHAL().startA21WebSocketAvatarRuntime`)
-	if volumeIndex < 0 || scheduleAvatarIndex < 0 || startRuntimeIndex < 0 || taskDelayIndex < 0 || startAvatarIndex < 0 {
-		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
-	}
-	if volumeIndex > scheduleAvatarIndex || scheduleAvatarIndex > startRuntimeIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must set volume, schedule delayed avatar relay task, then enter blocking Xiaozhi runtime")
-	}
-	if taskDelayIndex > startAvatarIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must delay before starting relay inside the background task")
-	}
-	mainLoopIndex := strings.Index(overlay, `     // Main loop`)
-	feedIndex := strings.Index(overlay, `+        GetHAL().feedTheDog();`)
-	if mainLoopIndex < 0 || feedIndex < 0 || feedIndex > mainLoopIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must park app_main after direct Xiaozhi start before Mooncake teardown")
-	}
-	if strings.Contains(overlay, `+    GetHAL().requestXiaozhiStart();`) {
-		t.Fatalf("official Xiaozhi-compatible overlay must not enter the Mooncake teardown lifecycle")
 	}
 }
 
-func TestOfficialXiaozhiCompatibleOverlayRunsOfficialAvatarRelayWithoutMooncakeWorker(t *testing.T) {
+func TestOfficialXiaozhiCompatibleOverlayPreservesOfficialAvatarRelayWorkerWithA21DeviceId(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get cwd: %v", err)
@@ -307,13 +277,6 @@ func TestOfficialXiaozhiCompatibleOverlayRunsOfficialAvatarRelayWithoutMooncakeW
 		`CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"`,
 		`#include "secret_logic.h"`,
 		`return CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL;`,
-		`void startA21WebSocketAvatarRuntime(std::function<void(std::string_view)> onStartLog);`,
-		`void updateA21WebSocketAvatarRuntime();`,
-		`static std::unique_ptr<WebSocketAvatar> _a21_avatar_runtime;`,
-		`start A21 direct websocket avatar runtime`,
-		`A21 official avatar relay waits for Xiaozhi network`,
-		`_a21_avatar_runtime = std::make_unique<WebSocketAvatar>();`,
-		`_a21_avatar_runtime->update();`,
 		`GetHAL().getFactoryMacString(":")`,
 		`escaped_device_id += "%3A";`,
 		`escaped_device_id`,
@@ -324,11 +287,17 @@ func TestOfficialXiaozhiCompatibleOverlayRunsOfficialAvatarRelayWithoutMooncakeW
 			t.Fatalf("official Xiaozhi-compatible overlay missing official avatar relay runtime contract %q", required)
 		}
 	}
-	if strings.Contains(overlay, `+    startNetwork(onStartLog);`) {
-		t.Fatalf("A21 direct avatar runtime must not start a second Wi-Fi/network path from the avatar relay task")
-	}
-	if strings.Contains(overlay, `+    mooncake::GetMooncake().extensionManager()->createAbility(std::make_unique<WebsocketAvatarWorker>());`) {
-		t.Fatalf("A21 direct avatar runtime must not depend on the Mooncake worker in the parked Xiaozhi path")
+	for _, forbidden := range []string{
+		`startA21WebSocketAvatarRuntime`,
+		`updateA21WebSocketAvatarRuntime`,
+		`_a21_avatar_runtime`,
+		`start A21 direct websocket avatar runtime`,
+		`A21 direct avatar runtime`,
+		`a21_start_avatar_relay_task`,
+	} {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("official Xiaozhi-compatible overlay must use the official AppAvatar worker; found %q", forbidden)
+		}
 	}
 }
 
@@ -345,21 +314,17 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPowerKeyLifecycle(t *
 	}
 	overlay := string(data)
 
-	for _, required := range []string{
+	for _, forbidden := range []string{
 		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
 		`WriteReg(0x10, common_config | 0x04);`,
 		`WriteReg(0x22, 0b110);`,
-		`WriteReg(0x27, 0x00);`,
+		`WriteReg(0x27, 0x10);`,
 		`Enable 16s PWRON hardware PMIC shutdown fallback.`,
 		`PWRON and OFFLEVEL can request PMIC power-off.`,
-		`Preserve official ON/OFF timing: 128ms on, 4s off.`,
 	} {
-		if !strings.Contains(overlay, required) {
-			t.Fatalf("official Xiaozhi-compatible overlay missing StackChan power-key lifecycle contract %q", required)
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("official Xiaozhi-compatible overlay must leave official StackChan PMIC lifecycle untouched; found %q", forbidden)
 		}
-	}
-	if strings.Contains(overlay, `+        WriteReg(0x27, 0x10);`) {
-		t.Fatalf("official Xiaozhi-compatible overlay must preserve official PMIC ON/OFF timing instead of changing IRQLEVEL")
 	}
 }
 

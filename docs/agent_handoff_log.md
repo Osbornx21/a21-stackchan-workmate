@@ -19,6 +19,72 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 13:18 CST - StackChan Official Power And UI Parity Build Ready
+
+Round goal:
+
+- Resolve the foreground report that no-USB upper-left power button startup
+  still only flashes the screen/red LED and stops, and align the product
+  startup path with the operator-approved official StackChan front-end model.
+
+Actual completed work:
+
+- Reviewed the current product boot chain from physical PWRKEY/AXP2101 hold to
+  ESP/HAL init, official launcher/setup/app selection, and Xiaozhi/Gateway
+  entry.
+- Identified that the previous A21 "PMIC parity" overlay was not official
+  parity: it wrote AXP2101 `0x10` and `0x22`, while the official StackChan
+  package leaves that path untouched and only writes `0x27=0x00`.
+- Removed the product overlay PMIC hunk so official StackChan power-key
+  lifecycle is preserved.
+- Removed `A21_OEM_AUTOSTART_XIAOZHI` and the product overlay `main.cpp`
+  direct-start/park path so official launcher, setup, mobile association, AI
+  agent entry, and home navigation remain the default product front-end.
+- Kept A21 service routing after official entry by returning
+  `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL` from `secret_logic` and
+  preserving the A21 `device_id` parameter in the official avatar websocket.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-official-power-ui-parity-recovery.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused app overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Product build passed through
+  `a21-stackchan-official-xiaozhi-compatible-build`; app artifact SHA-256:
+  `22fde627ca518dedfa261fafd94a5ddf4bacbd0bbde91b9be8a25a788de5d5fc`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-131727-1780636647604865000.json`.
+- Built source evidence shows official `main.cpp` launcher/setup lifecycle,
+  official PMIC `WriteReg(0x27, 0x00)`, no A21 autostart macro, and A21
+  Gateway URL routing retained.
+
+Remaining issues:
+
+- Guarded product flash and foreground no-USB power-key physical validation
+  remain pending for this newly built artifact.
+
+Next suggested action:
+
+- Commit this build-ready transition, guarded-flash the product StackChan
+  through the official-compatible product lane, then validate unplugged
+  physical power-key boot into the official StackChan front-end and AI agent
+  entry into A21.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write/reset, no provider key
+  in firmware, no Git prune/gc, and no internal-test3 Gateway/voice protocol
+  rollback.
+
 ## 2026-06-05 12:54 CST - StackChan Native Motion And Power Build Ready
 
 Round goal:

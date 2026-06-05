@@ -9,7 +9,6 @@ index dbe9da5..ee4d492 100644
 -set(PROJECT_VER "1.4.1")
 +set(PROJECT_VER "0.1.0-a21-official-xiaozhi-compatible")
  add_definitions(-DFIRMWARE_VERSION=\"${PROJECT_VER}\")
-+add_definitions(-DA21_OEM_AUTOSTART_XIAOZHI=1)
 
  # Add this line to disable the specific warning
  add_compile_options(-Wno-missing-field-initializers)
@@ -107,15 +106,6 @@ index 5f9efcf..cc670b6 100644
      /* ----------------------------------- RGB ---------------------------------- */
      void setRgbColor(uint8_t index, uint8_t r, uint8_t g, uint8_t b);
      void showRgbColor(uint8_t r, uint8_t g, uint8_t b);
-@@ -253,3 +256,7 @@ public:
-     void startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog);
--
-+#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
-+    void startA21WebSocketAvatarRuntime(std::function<void(std::string_view)> onStartLog);
-+    void updateA21WebSocketAvatarRuntime();
-+#endif
-+
-     /* ----------------------------------- IMU ---------------------------------- */
 diff --git a/firmware/main/hal/hal_ws_avatar.cpp b/firmware/main/hal/hal_ws_avatar.cpp
 index 3ff4871..334a27d 100644
 --- a/firmware/main/hal/hal_ws_avatar.cpp
@@ -137,116 +127,6 @@ index 3ff4871..334a27d 100644
 +                           escaped_device_id);
 +
          connect();
-@@ -478,7 +480,31 @@ private:
-         // mclog::info("send time: {} ms, size: {}", _interval / 1000, packet.size());
-     }
- };
--
--class WebsocketAvatarWorker : public mooncake::BasicAbility {
-+#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
-+static std::unique_ptr<WebSocketAvatar> _a21_avatar_runtime;
-+static uint32_t _a21_avatar_last_tick = 0;
-+
-+void Hal::startA21WebSocketAvatarRuntime(std::function<void(std::string_view)> onStartLog)
-+{
-+    mclog::tagInfo(_tag, "start A21 direct websocket avatar runtime");
-+    mclog::tagInfo(_tag, "A21 official avatar relay waits for Xiaozhi network");
-+    onStartLog("Connecting to\nA21 relay...");
-+    if (!_a21_avatar_runtime) {
-+        _a21_avatar_runtime = std::make_unique<WebSocketAvatar>();
-+        _a21_avatar_runtime->init();
-+    }
-+}
-+
-+void Hal::updateA21WebSocketAvatarRuntime()
-+{
-+    if (!_a21_avatar_runtime || GetHAL().millis() - _a21_avatar_last_tick < 20) {
-+        return;
-+    }
-+    _a21_avatar_last_tick = GetHAL().millis();
-+    _a21_avatar_runtime->update();
-+}
-+#endif
-+
-+class WebsocketAvatarWorker : public mooncake::BasicAbility {
- public:
-     WebsocketAvatarWorker()
-diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
-index 164a751..199a17d 100644
---- a/firmware/main/main.cpp
-+++ b/firmware/main/main.cpp
-@@ -3,6 +3,11 @@
-  *
-  * SPDX-License-Identifier: MIT
-  */
-+#include <audio/audio_codec.h>
-+#include <board.h>
-+#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
-+#include <freertos/FreeRTOS.h>
-+#include <freertos/task.h>
-+#endif
-+#include <string_view>
- #include <smooth_ui_toolkit.hpp>
- #include <uitk/short_namespace.hpp>
- #include <mooncake_log.h>
-@@ -15,6 +20,24 @@
- using namespace mooncake;
- using namespace smooth_ui_toolkit;
--
-+#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
-+static void a21_start_avatar_relay_task(void*)
-+{
-+    GetHAL().delay(12000);
-+    mclog::tagInfo("main", "A21 starting official StackChan avatar relay runtime");
-+    GetHAL().startA21WebSocketAvatarRuntime([](std::string_view) {});
-+    while (1) {
-+        GetHAL().updateA21WebSocketAvatarRuntime();
-+        GetHAL().delay(20);
-+    }
-+}
-+#endif
-+
- extern "C" void app_main(void)
- {
-     // Setup logger
-@@ -36,6 +59,19 @@ extern "C" void app_main(void)
-     GetMooncake().installApp(std::make_unique<AppDance>());
-     GetMooncake().installApp(std::make_unique<AppSetup>());
--
-+#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
-+    auto* codec = Board::GetInstance().GetAudioCodec();
-+    if (codec != nullptr) {
-+        codec->SetOutputVolume(92);
-+    }
-+    xTaskCreate(a21_start_avatar_relay_task, "a21_avatar", 12288, nullptr, 4, nullptr);
-+    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
-+    GetHAL().startXiaozhi();
-+    while (1) {
-+        GetHAL().feedTheDog();
-+        GetHAL().delay(1000);
-+    }
-+#endif
-+
-     // Main loop
-     while (1) {
-         GetHAL().feedTheDog();
-diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc
-index c75df3d..0d37a2b 100644
---- a/firmware/main/hal/board/stackchan.cc
-+++ b/firmware/main/hal/board/stackchan.cc
-@@ -59,7 +59,10 @@ public:
-         WriteReg(0x90, 0xBF);
-         WriteReg(0x94, 33 - 5);
-         WriteReg(0x95, 33 - 5);
--        WriteReg(0x27, 0x00);
-+        auto common_config = ReadReg(0x10);
-+        WriteReg(0x10, common_config | 0x04);  // Enable 16s PWRON hardware PMIC shutdown fallback.
-+        WriteReg(0x22, 0b110);                 // PWRON and OFFLEVEL can request PMIC power-off.
-+        WriteReg(0x27, 0x00);                  // Preserve official ON/OFF timing: 128ms on, 4s off.
--
-+
-         auto ret = setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_700MA);
-         if (!ret) {
 diff --git a/firmware/partitions.csv b/firmware/partitions.csv
 index 0656b16..8b9bc5a 100644
 --- a/firmware/partitions.csv
@@ -304,11 +184,7 @@ index 4c2701d..eb0e63f 100644
  __attribute__((weak)) std::string get_server_url()
  {
 -    return "http://localhost:3000";
-+#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
 +    return CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL;
-+#else
-+    return "http://localhost:3000";
-+#endif
  }
 diff --git a/firmware/xiaozhi-esp32/main/application.cc b/firmware/xiaozhi-esp32/main/application.cc
 index 3b6f07e..ec1e05d 100644
