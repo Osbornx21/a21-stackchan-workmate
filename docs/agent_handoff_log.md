@@ -18887,12 +18887,20 @@ Runtime or physical evidence:
   `physical_accepted=false`, and
   `next_action=connect_official_stackchan_ws`.
 - Public `/v1/devices` still returns `devices=[]`.
+- Post-deploy read-only product recovery precheck wrote
+  `reports/a21-stackchan-product-recovery-20260605-083905.json` with
+  `status=product_offline_rom_download_required`; it found
+  `/dev/cu.usbmodem1101`, but the latest guarded flash log still reports
+  `Failed to connect to ESP32-S3: No serial data received`.
 - No live product physical evidence was collected in this transition.
 
 Known risks/blockers:
 
 - Product device is still offline/missing from Gateway registry until physical
   recovery/ROM-download/product flash/reconnect is completed.
+- The next flash attempt must use only
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute` with wait-ROM and
+  `--esptool-before no_reset` after manual ESP32-S3 ROM/download entry.
 - Physical power-key startup, wake, real latency, barge-in, official
   `/stackChan/ws`, and visible screen/RGB/servo/touch behavior remain
   unaccepted.

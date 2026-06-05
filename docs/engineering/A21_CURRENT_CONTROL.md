@@ -116,6 +116,15 @@ fast-ack guard transition:
   `/v1/devices` returns `devices=[]`, and official status remains
   `connected=false`, `physical_accepted=false`,
   `next_action=connect_official_stackchan_ws`.
+- Post-deploy read-only recovery precheck wrote
+  `reports/a21-stackchan-product-recovery-20260605-083905.json` and still
+  classified the product as `product_offline_rom_download_required`. It found
+  `/dev/cu.usbmodem1101`, but the latest guarded product flash evidence still
+  reports `Failed to connect to ESP32-S3: No serial data received`.
+- The correct next flash lane remains guarded product-only:
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute` with wait-ROM and
+  `--esptool-before no_reset` after the device is manually placed in
+  ESP32-S3 ROM/download mode.
 - This transition does not mark physical power-key, wake, latency, official
   `/stackChan/ws`, or body-action acceptance. Product device recovery and
   post-flash physical validation are still required.

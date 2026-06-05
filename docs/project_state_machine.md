@@ -39,6 +39,11 @@ Latest control update, 2026-06-05 08:29 CST:
   passed.
 - Public hardware truth remains `devices=[]`, official relay
   `connected=false`, and `next_action=connect_official_stackchan_ws`.
+- Post-deploy read-only recovery precheck wrote
+  `reports/a21-stackchan-product-recovery-20260605-083905.json` with
+  `status=product_offline_rom_download_required`, USB candidate
+  `/dev/cu.usbmodem1101`, and latest flash-log evidence
+  `No serial data received`.
 - This transition does not claim product physical power-key, wake, latency,
   official `/stackChan/ws`, or body-action acceptance.
 
