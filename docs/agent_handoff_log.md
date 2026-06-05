@@ -19,6 +19,65 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 14:28 CST - StackChan Official Home PMIC Power-Key Flashed
+
+Round goal:
+
+- Flash the official Home + conservative PMIC power-key parity candidate to the
+  product StackChan device through the guarded product lane.
+
+Actual completed work:
+
+- Committed and pushed
+  `9e6bfad92abc fix(stackchan): restore official home pmic power parity`.
+- Ran the guarded official-compatible product flash executor on
+  `/dev/cu.usbmodem1101`.
+- Flash guard accepted the foreground hardware-window branch only because the
+  worktree was clean, HEAD was not detached, and the confirmation string
+  matched the product lane.
+- Flash executed and wrote bootloader, app, partition table, OTA data, and
+  generated assets.
+- Queried the public Gateway after flash. `/healthz` passed; device registry
+  still shows the product record stale until the device reconnects or the
+  operator opens official `AI.AGENT`.
+
+Changed files:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Product flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-142805-1780640885284551000.json`.
+- Flashed app artifact:
+  `a21-stackchan-official-xiaozhi-compatible.bin`; SHA-256
+  `1f1348156a3312c76059f0a084d956d13ca41cc74a22ca2c0b8884b4ea1a9aa3`.
+- Control guard commit:
+  `9e6bfad92abc`.
+- Public `/healthz` returned OK after flash.
+- `/v1/power-lifecycle?device_id=44:1b:f6:e2:6a:60` still reports
+  `overall_status=blocked` because no-cable cold boot and physical power button
+  evidence are operator/instrument accepted fields, not Gateway-only evidence.
+
+Remaining issues:
+
+- Physical no-USB power-key acceptance is pending.
+- If the same screen/red LED flash and no boot symptom remains, the next step
+  is hardware-side evidence: battery connection/charge path, AXP2101 rail/latch
+  behavior, and stock official firmware A/B no-USB power test.
+
+Next suggested action:
+
+- Operator unplugs USB, lets the unit fully power down, presses the upper-left
+  power key, and reports whether it reaches official Home without USB.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin`, no provider key in firmware, no direct Xiaozhi boot
+  path, no BLE/setup/main launcher rewrite, no NVS write in this flash round, no
+  Git prune/gc, and no rollback of internal-test3 voice/protocol changes.
+
 ## 2026-06-05 14:24 CST - StackChan Official Home PMIC Power-Key Build Ready
 
 Round goal:
