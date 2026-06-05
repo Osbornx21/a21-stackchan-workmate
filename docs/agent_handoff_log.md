@@ -74,6 +74,63 @@ Forbidden actions avoided:
 - No code changes, no product flash, no provider changes, no NVS writes, no
   worker dispatch, and no side-branch merge.
 
+## 2026-06-05 19:55 CST - P0 Power Boot RCA Boundary Re-established
+
+Round goal:
+
+- Re-read the current product overlay, official M5Stack StackChan source, 78
+  Xiaozhi state machine, and flash/NVS evidence to stop further speculative
+  power-state patches.
+
+Actual completed work:
+
+- Confirmed the current A21 product overlay preserves official Launcher/Home
+  before `AI.AGENT`; guard tests reject `main.cpp` autostart and speculative
+  PMIC startup writes.
+- Confirmed official StackChan initializes AXP2101 only after ESP32 app boot,
+  so a no-USB flash-and-stop symptom before serial/app evidence is below
+  Gateway, provider, AI.AGENT, and A21 runtime code.
+- Confirmed 78 Xiaozhi `origin/main` is useful for voice state-machine parity
+  but not authoritative for StackChan physical PMIC cold boot.
+- Added the current P0 power boot RCA report.
+
+Changed files:
+
+- `docs/engineering/A21_P0_POWER_BOOT_RCA_20260605.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Timed no-USB PWRKEY evidence matrix remains required.
+- P0 voice-loop RCA, body-parity RCA, and provisioning/mobile-app RCA remain
+  queued.
+
+Known risks/blockers:
+
+- Existing evidence proves USB/external-power boot health, not standalone
+  battery/PMIC rail health.
+- If the recorded stock-official no-USB failure is inaccurate, the next A/B
+  evidence must correct it before any firmware fix is chosen.
+
+Recommended next action:
+
+- Capture the timed no-USB PWRKEY matrix first. Only open a firmware fix if
+  stock official passes and A21 fails under the same physical conditions.
+
+Tests/build/runtime results:
+
+- `git diff --check` passed.
+- Changed-doc secret scan found no Wi-Fi password, provider key, or API-key
+  pattern in the new RCA/state documents.
+- `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`
+  passed.
+
+Forbidden actions avoided:
+
+- No code changes, no product flash, no provider changes, no NVS writes, no
+  PMIC register patch, and no worker dispatch.
+
 ## 2026-06-05 18:38 CST - Internal Test 4 Trial Hotspot NVS Updated
 
 Round goal:

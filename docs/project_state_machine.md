@@ -22,6 +22,9 @@ Recovery baseline:
 Active stabilization plan:
 `docs/plans/2026-06-05-a21-stabilization-after-internal-test4.md`.
 
+Latest P0 power boot RCA:
+`docs/engineering/A21_P0_POWER_BOOT_RCA_20260605.md`.
+
 Active transition:
 `T-XIAOZHI-MANUAL-START-OFFICIAL-MODE-PARITY-001`.
 
