@@ -312,11 +312,13 @@ diff --git a/firmware/xiaozhi-esp32/main/application.cc b/firmware/xiaozhi-esp32
 index 3b6f07e..ec1e05d 100644
 --- a/firmware/xiaozhi-esp32/main/application.cc
 +++ b/firmware/xiaozhi-esp32/main/application.cc
-@@ -10,6 +10,7 @@
+@@ -10,6 +10,9 @@
  #include "assets.h"
  #include "settings.h"
 
++#include <apps/common/common.h>
 +#include <hal/hal.h>
++#include <stackchan/stackchan.h>
  #include <cstring>
  #include <esp_log.h>
  #include <cJSON.h>
@@ -534,8 +536,71 @@ index 3b6f07e..ec1e05d 100644
 +#endif
 +}
 +
++void Application::ApplyA21TouchLocalFeedback(const char* touch) {
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    if (touch == nullptr) {
++        return;
++    }
++
++    uint8_t red = 0;
++    uint8_t green = 72;
++    uint8_t blue = 168;
++    int32_t yaw = 0;
++    int32_t pitch = 300;
++    int speed = 180;
++    bool move_head = true;
++
++    if (strcmp(touch, "screen_barge_in") == 0 || strcmp(touch, "top_barge_in") == 0) {
++        red = 168;
++        green = 40;
++        blue = 0;
++        pitch = 240;
++        speed = 240;
++    } else if (strcmp(touch, "top_swipe_forward") == 0) {
++        red = 0;
++        green = 120;
++        blue = 90;
++        yaw = 90;
++        pitch = 360;
++        speed = 260;
++    } else if (strcmp(touch, "top_swipe_backward") == 0) {
++        red = 90;
++        green = 0;
++        blue = 168;
++        yaw = -90;
++        pitch = 300;
++        speed = 260;
++    } else if (strcmp(touch, "top_tap") == 0) {
++        red = 0;
++        green = 96;
++        blue = 168;
++        pitch = 340;
++    } else if (strcmp(touch, "screen_tap") != 0) {
++        move_head = false;
++    }
++
++    {
++        LvglLockGuard lock;
++        auto& stackchan = GetStackChan();
++        stackchan.leftNeonLight().setColor(red, green, blue);
++        stackchan.rightNeonLight().setColor(red, green, blue);
++        if (move_head) {
++            auto& motion = stackchan.motion();
++            if (!motion.isModifyLocked() && !motion.isMoving()) {
++                motion.moveWithSpeed(yaw, pitch, speed);
++            }
++        }
++    }
++    audio_service_.PlaySound(Lang::Sounds::OGG_VIBRATION);
++#else
++    (void)touch;
++#endif
++}
++
 +void Application::HandleA21ScreenTouchEvent() {
 +#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    const char* touch = GetDeviceState() == kDeviceStateSpeaking ? "screen_barge_in" : "screen_tap";
++    ApplyA21TouchLocalFeedback(touch);
 +    if (!protocol_) {
 +        return;
 +    }
@@ -557,10 +622,12 @@ index 3b6f07e..ec1e05d 100644
 +    switch (gesture) {
 +        case HeadPetGesture::SwipeForward:
 +            a21_head_touch_swiped_ = true;
++            ApplyA21TouchLocalFeedback("top_swipe_forward");
 +            protocol_->SendA21TouchEvent("top_swipe_forward", "top_sensor");
 +            return;
 +        case HeadPetGesture::SwipeBackward:
 +            a21_head_touch_swiped_ = true;
++            ApplyA21TouchLocalFeedback("top_swipe_backward");
 +            protocol_->SendA21TouchEvent("top_swipe_backward", "top_sensor");
 +            return;
 +        case HeadPetGesture::Release:
@@ -569,10 +636,12 @@ index 3b6f07e..ec1e05d 100644
 +                return;
 +            }
 +            if (GetDeviceState() == kDeviceStateSpeaking) {
++                ApplyA21TouchLocalFeedback("top_barge_in");
 +                protocol_->SendA21TouchEvent("top_barge_in", "top_sensor");
 +                AbortSpeaking(kAbortReasonNone);
 +                return;
 +            }
++            ApplyA21TouchLocalFeedback("top_tap");
 +            protocol_->SendA21TouchEvent("top_tap", "top_sensor");
 +            HandleStartListeningEvent();
 +            return;
@@ -707,11 +776,8 @@ index 3b6f07e..ec1e05d 100644
 
              if (listening_mode_ != kListeningModeRealtime) {
                  audio_service_.EnableVoiceProcessing(false);
--                // Only AFE wake word can be detected in speaking mode
--                audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
-+                // A21 product uses the configured Zi Yue custom wake word, so
-+                // keep wake detection available while speaking for barge-in.
-+                audio_service_.EnableWakeWordDetection(true);
+                 // Only AFE wake word can be detected in speaking mode
+                 audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
              }
              audio_service_.ResetDecoder();
              break;
@@ -861,6 +927,7 @@ index 7ca7af4..2e5ae90 100644
      void ContinueOpenAudioChannel(ListeningMode mode);
      void ContinueWakeWordInvoke(const std::string& wake_word);
 +    void EnsureA21ControlChannel();
++    void ApplyA21TouchLocalFeedback(const char* touch);
 +    void HandleA21ScreenTouchEvent();
 +    void HandleA21HeadPetGesture(HeadPetGesture gesture);
 

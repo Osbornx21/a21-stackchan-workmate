@@ -391,8 +391,8 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 		`Loaded %d A21 sdkconfig custom wake command(s) for %s`,
 		`CONFIG_SR_MN_CN_MULTINET7_QUANT=y`,
 		`# CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3 is not set`,
-		`keep wake detection available while speaking for barge-in`,
-		`audio_service_.EnableWakeWordDetection(true);`,
+		`Only AFE wake word can be detected in speaking mode`,
+		`audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing custom wake contract %q", required)
@@ -543,6 +543,10 @@ func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T
 		`onScreenTouch`,
 		`HandleA21ScreenTouchEvent`,
 		`HandleA21HeadPetGesture`,
+		`ApplyA21TouchLocalFeedback`,
+		`Lang::Sounds::OGG_VIBRATION`,
+		`leftNeonLight().setColor`,
+		`rightNeonLight().setColor`,
 		`top_swipe_forward`,
 		`top_barge_in`,
 		`callbacks.on_playback_started`,

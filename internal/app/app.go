@@ -1092,7 +1092,7 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 func applyXiaozhiCloudEdgeProductChainEnvDefaults(env []string) []string {
 	out := append([]string(nil), env...)
 	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_FAST_ACK_ENABLED")) == "" {
-		out = append(out, "A21_XIAOZHI_FAST_ACK_ENABLED=false")
+		out = append(out, "A21_XIAOZHI_FAST_ACK_ENABLED=true")
 	}
 	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS")) == "" {
 		out = append(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS=700")
