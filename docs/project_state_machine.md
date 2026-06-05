@@ -9,7 +9,7 @@ Active override transition:
 `T-A21-LEAN-CARVE-MAINLINE-001`.
 
 Current override state:
-`S-LEAN-CARVE-GOVERNANCE-GATES-PASSED-RUNTIME-PHYSICAL-STACKCHAN-OFFLINE-BLOCKED`.
+`S-LEAN-CARVE-GOVERNANCE-CI-PASSED-RUNTIME-PHYSICAL-STACKCHAN-OFFLINE-BLOCKED`.
 
 Internal test 4 is now the protected recovery baseline. Until P0 stabilization
 exits, no new feature work, product flash, provider chain change, side-branch
@@ -79,6 +79,18 @@ Latest lean carve update, 2026-06-05 21:20 CST:
   `AI.AGENT` so it reconnects to the public Gateway, then rerun the
   direct-source true-provider StackChan fast companion turn and record p95 plus
   barge-in stop metrics in `docs/lean/CARVE_LOG.md`.
+
+Latest lean carve CI update, 2026-06-05 22:08 CST:
+
+- `main-lean` was pushed through commit `3502a57042c7`.
+- CI false-reds were closed without widening product scope: app-layer
+  V21-named paths were renamed to workspace-readiness names, `cmd/a21-lab` was
+  tracked after narrowing root binary ignore patterns, and the Linux-only
+  sherpa streaming ASR fake helper was made JSONL-based.
+- GitHub Actions run `27019468711` passed both `Run A21 lean gate` and
+  `Run A21 release check`.
+- The active transition remains runtime-blocked only on physical product
+  StackChan reconnection and true-provider fast-companion p95/barge-in proof.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence

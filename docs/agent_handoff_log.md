@@ -19,6 +19,69 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 22:08 CST - Main-Lean CI Governance Gate Closed
+
+Round goal:
+
+- Close the `main-lean` GitHub Actions gate after the first CI run exposed
+  release-check failures that did not appear in the local carved worktree.
+
+Actual completed work:
+
+- Fixed namespace-audit CI failure by moving app-layer professional workspace
+  readiness files off V21-named source paths while preserving the explicit
+  `internal/v21adapter` boundary.
+- Fixed fresh-checkout CI failure by narrowing root build-artifact ignores from
+  `a21`/`a21-lab` to `/a21`/`/a21-lab` and tracking `cmd/a21-lab/main.go`.
+- Fixed Linux-only sherpa streaming ASR test fixture failure by replacing shell
+  glob matching with a JSONL-parsing fake helper.
+- Pushed `main-lean` through commit `3502a57042c7`; GitHub Actions run
+  `27019468711` passed both `Run A21 lean gate` and `Run A21 release check`.
+
+Changed files:
+
+- `.gitignore`
+- `cmd/a21-lab/main.go`
+- `internal/app/xiaozhi_workspace_readiness_01.go`
+- `internal/app/xiaozhi_workspace_readiness_02.go`
+- `internal/providers/voice_pipeline_real_adapters_part_02_test.go`
+- `internal/runtimeguard/namespace_test.go`
+
+Unfinished items:
+
+- The north-star true-provider physical `stackchan-fast-companion-turn` lock is
+  still not satisfied; no p95 below 1500 ms or barge-in success can be recorded
+  while product StackChan `44:1b:f6:e2:6a:60` remains offline/missing.
+
+Known risks/blockers:
+
+- Product device remains absent from the public Gateway registry and local USB
+  serial list, matching the prior `product_offline_serial_missing` recovery
+  status.
+- Local full `make release-check` was terminated in the firmware-tools setup
+  phase after the shell wrapper sat idle without child work; CI release-check
+  is now the authoritative full-release result for this round.
+
+Recommended next action:
+
+- Physically power/connect the product StackChan, open `AI.AGENT`, verify it
+  appears at the public Gateway, then rerun the direct-source true-provider
+  `make stackchan-fast-companion-turn` command from the previous entry.
+
+Tests/build/runtime results:
+
+- Local: `make verify` passed.
+- Local: `make gate` passed with namespace audit OK.
+- Local: `bash scripts/lean-gate.sh` passed.
+- Local: `go test ./internal/providers -run TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper -count=1 -v` passed.
+- Local: `go test ./cmd/a21-lab ./internal/app -count=1` passed.
+- CI: GitHub Actions run `27019468711` passed in 4m54s.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider key output, no V21 internal
+  execution, no branch fan-out, no ECS restart, and no new governance command.
+
 ## 2026-06-05 21:33 CST - Lean Carve Runtime Lock Reclassified To Physical Offline
 
 Round goal:

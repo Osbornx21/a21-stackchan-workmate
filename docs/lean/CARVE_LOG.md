@@ -93,6 +93,9 @@ run diary and must stay short.
   or `simulator` symbol matches under `go tool nm`.
 - Verification passed: `go test ./...`, `make verify`, `make preflight`
   sequential rerun, `make doctor`, and `bash scripts/lean-gate.sh`.
+- CI verification passed on `main-lean` at commit `3502a57042c7`: GitHub
+  Actions run `27019468711` passed both `Run A21 lean gate` and
+  `Run A21 release check`.
 - North-star runtime evidence is not locked: the live public Gateway at
   `http://47.103.57.217` returned EOF for `/v1/devices`, so the true-provider
   fast companion p95 and barge-in stop metrics were not collected in this
