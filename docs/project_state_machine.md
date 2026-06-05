@@ -31,6 +31,14 @@ Latest control update, 2026-06-05 08:29 CST:
   status-only STT display redaction, and fast-ack disabled behavior passed.
 - Review-related `git diff --check`, Gateway `-race` subset, `make verify`,
   `make preflight`, and `make doctor` passed.
+- Commit `79381d4 feat(gateway): guard product stt display and fast ack` was
+  pushed and deployed to ECS `47.103.57.217` through Aliyun Cloud Assistant
+  over the 5080lab SOCKS path. Remote archive SHA verification, focused
+  app/Gateway tests, build, `/opt/a21.next` safe-swap, `a21-gateway` restart,
+  loopback health, Caddy health, official status, and public SOCKS smoke
+  passed.
+- Public hardware truth remains `devices=[]`, official relay
+  `connected=false`, and `next_action=connect_official_stackchan_ws`.
 - This transition does not claim product physical power-key, wake, latency,
   official `/stackChan/ws`, or body-action acceptance.
 

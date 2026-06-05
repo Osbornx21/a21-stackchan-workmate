@@ -100,6 +100,22 @@ fast-ack guard transition:
   `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`,
   `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
   `GOMAXPROCS=2 make doctor`.
+- Commit `79381d4 feat(gateway): guard product stt display and fast ack` was
+  pushed and deployed to ECS `47.103.57.217` through Aliyun Cloud Assistant
+  over the 5080lab SOCKS path.
+- ECS deployment reassembled archive SHA-256
+  `ea979684bb4a73952fb0d64c787c2f23089ab5f7f5349798d76e0e8dba444f25`,
+  ran remote focused app/Gateway tests, built `/opt/a21.next/bin/a21`, safely
+  swapped `/opt/a21`, restarted `a21-gateway`, and passed loopback plus Caddy
+  `/healthz`.
+- Public SOCKS-path smoke passed for `/healthz`,
+  `/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60`,
+  `/v1/devices`, and `/workspace` containing `allow_mcp_fallback`,
+  `fallback_delivered`, and `Relay status`.
+- Public live truth is unchanged on the hardware side:
+  `/v1/devices` returns `devices=[]`, and official status remains
+  `connected=false`, `physical_accepted=false`,
+  `next_action=connect_official_stackchan_ws`.
 - This transition does not mark physical power-key, wake, latency, official
   `/stackChan/ws`, or body-action acceptance. Product device recovery and
   post-flash physical validation are still required.

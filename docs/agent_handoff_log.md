@@ -18866,14 +18866,27 @@ Tests/build/runtime results:
   `GOMAXPROCS=2 make verify`,
   `GOMAXPROCS=2 make preflight`, and
   `GOMAXPROCS=2 make doctor`.
-- Deployment and public smoke are still pending for this round at the time this
-  handoff entry was updated.
+- Commit `79381d4 feat(gateway): guard product stt display and fast ack` was
+  pushed and deployed to ECS `47.103.57.217` through Aliyun Cloud Assistant
+  over the 5080lab SOCKS path.
+- Remote archive SHA verification passed:
+  `ea979684bb4a73952fb0d64c787c2f23089ab5f7f5349798d76e0e8dba444f25`.
+- Remote focused app/Gateway tests passed before swap.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed.
+- ECS `a21-gateway` restarted active; loopback `127.0.0.1:21081/healthz`,
+  Caddy `127.0.0.1/healthz`, and public SOCKS-path `/healthz` passed.
+- Public `/workspace` smoke found `allow_mcp_fallback`,
+  `fallback_delivered`, and `Relay status`.
 
 Runtime or physical evidence:
 
 - Local unit tests prove stock raw STT ordering still works by default and
   status-only policy redacts device display text without leaking the raw ASR
   transcript into traces.
+- Public official status remains `connected=false`,
+  `physical_accepted=false`, and
+  `next_action=connect_official_stackchan_ws`.
+- Public `/v1/devices` still returns `devices=[]`.
 - No live product physical evidence was collected in this transition.
 
 Known risks/blockers:
