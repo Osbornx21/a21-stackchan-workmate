@@ -19,6 +19,66 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 13:54 CST - StackChan Official Config Fallback Side Branch Ready
+
+Round goal:
+
+- Find a non-destructive solution for the restored official StackChan front-end
+  stopping at `Ready to Configure` without replacing official PMIC, Home,
+  Setup, up-swipe, or `AI.AGENT` lifecycle.
+
+Actual completed work:
+
+- Created isolated side branch
+  `codex/a21-official-config-fallback-20260605` under
+  `/Users/jiyurun/.codex/worktrees/a21-official-config-fallback-20260605/New project`.
+- Root-caused the trap to official `GetHAL().isAppConfiged()`, which reads NVS
+  namespace `app_config`, key `is_configed`.
+- Kept the official front-end and hardware lifecycle as the product direction;
+  this branch only extends the existing A21 guarded NVS provisioner.
+- Updated `a21-stackchan-official-xiaozhi-compatible-nvs` so it writes
+  `app_config/is_configed=1` when Wi-Fi credentials are explicitly written or
+  existing Wi-Fi credentials are preserved.
+- Added execution-report evidence field `app_config_marked_configured` and
+  strengthened post-generation verification so a final NVS image with Wi-Fi
+  credentials must also contain `app_config/is_configed=1`.
+- Recorded that actual NVS execution must not run from this side worktree; the
+  T7 guard requires a clean foreground hardware-window branch.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-official-config-fallback-side-branch.md`
+- `docs/agent_handoff_log.md`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused NVS and official-compatible overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatible.*NVS|OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- Focused audio rerun passed:
+  `GOMAXPROCS=2 go test ./internal/audio -run TestCheckedInSileroVADRunnerHelpIsExecutable -count=1`.
+
+Remaining issues:
+
+- Side branch still needs commit/push and integration into the clean foreground
+  hardware-window branch before NVS can be written.
+- Physical acceptance remains pending: reboot must reach official Home, then
+  opening `AI.AGENT` must connect A21 voice/body runtime through Gateway.
+
+Next suggested action:
+
+- Commit and push the side branch, cherry-pick it into the foreground
+  `codex/a21-hardware-window-*` branch, then execute the guarded NVS provision
+  with redacted operator-approved Wi-Fi credentials.
+
+Forbidden actions avoided:
+
+- No firmware app flash, no generic `xiaozhi.bin`, no provider key in firmware,
+  no stock official front-end replacement, no PMIC overlay change, no Git
+  prune/gc, and no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 13:31 CST - StackChan Official Front-End Restored And AI Agent Boundary Accepted
 
 Round goal:
