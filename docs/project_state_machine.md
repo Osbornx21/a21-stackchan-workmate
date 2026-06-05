@@ -3,6 +3,25 @@
 Status: active state document.
 Last updated: 2026-06-05.
 
+## Stabilization Override
+
+Active override transition:
+`T-A21-STABILIZE-CONTROL-SURFACE-001`.
+
+Current override state:
+`S-CODE-FREEZE-INTERNAL-TEST4-BASELINE-PROTECTED`.
+
+Internal test 4 is now the protected recovery baseline. Until P0 stabilization
+exits, no new feature work, product flash, provider chain change, side-branch
+merge, or worker expansion is allowed unless it is explicitly tied to rollback,
+recovery, or a P0 acceptance transition.
+
+Recovery baseline:
+`docs/engineering/A21_INTERNAL_TEST4_RECOVERY_BASELINE.md`.
+
+Active stabilization plan:
+`docs/plans/2026-06-05-a21-stabilization-after-internal-test4.md`.
+
 Active transition:
 `T-XIAOZHI-MANUAL-START-OFFICIAL-MODE-PARITY-001`.
 

@@ -19,6 +19,61 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 19:20 CST - Internal Test 4 Stabilization Freeze Started
+
+Round goal:
+
+- Protect the published internal test 4 release as the recovery baseline and
+  stop uncontrolled feature/worktree expansion before further P0 repair.
+
+Actual completed work:
+
+- Created stabilization branch
+  `codex/a21-stabilization-after-internal-test4-20260605` from internal test 4
+  release commit `1387d58f364f6ae1c7258487fb5a9863567adc74`.
+- Added the internal test 4 recovery baseline document.
+- Added the post-internal-test4 stabilization plan and P0 transition order.
+- Added a stabilization override to the project state machine.
+
+Changed files:
+
+- `docs/engineering/A21_INTERNAL_TEST4_RECOVERY_BASELINE.md`
+- `docs/plans/2026-06-05-a21-stabilization-after-internal-test4.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- P0 power boot RCA is next and must compare stock M5Stack StackChan, official
+  Xiaozhi ESP32, and A21 from button press through launcher and AI.AGENT entry.
+- P0 voice-loop RCA, body-parity RCA, and provisioning RCA remain queued.
+- Old dirty temporary firmware worktree
+  `/private/tmp/a21-firmware-clean-32c5286` still needs classification.
+
+Known risks/blockers:
+
+- Internal test 4 is usable but not fully product-accepted for no-cable power,
+  voice fluidity, body parity, or no-preloaded-Wi-Fi provisioning.
+- Provider realtime race tests are not reliable until the test fake or adapter
+  concurrency is fixed.
+
+Recommended next action:
+
+- Finish verification and push this stabilization branch, then start
+  `T-A21-P0-POWER-BOOT-RCA-001` without flashing until the exact candidate and
+  rollback path are named.
+
+Tests/build/runtime results:
+
+- `git diff --check` passed with the new documents included in the diff.
+- Changed-doc secret scan found no Wi-Fi password, provider key, or API-key
+  pattern in the new baseline/plan/state documents.
+
+Forbidden actions avoided:
+
+- No code changes, no product flash, no provider changes, no NVS writes, no
+  worker dispatch, and no side-branch merge.
+
 ## 2026-06-05 18:38 CST - Internal Test 4 Trial Hotspot NVS Updated
 
 Round goal:
