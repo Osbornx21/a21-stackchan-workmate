@@ -646,7 +646,7 @@ index 3b6f07e..ffbf932 100644
              return;
          }
      }
-@@ -911,7 +1144,6 @@ void Application::HandleStateChangedEvent() {
+@@ -911,8 +1144,7 @@ void Application::HandleStateChangedEvent() {
              break;
          case kDeviceStateSpeaking:
              display->SetStatus(Lang::Strings::SPEAKING);
@@ -654,6 +654,7 @@ index 3b6f07e..ffbf932 100644
              if (listening_mode_ != kListeningModeRealtime) {
                  audio_service_.EnableVoiceProcessing(false);
                  // Only AFE wake word can be detected in speaking mode
+                 audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
 @@ -940,6 +1172,11 @@ void Application::Schedule(std::function<void()>&& callback) {
  void Application::AbortSpeaking(AbortReason reason) {
      ESP_LOGI(TAG, "Abort speaking");

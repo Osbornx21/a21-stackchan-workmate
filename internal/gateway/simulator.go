@@ -424,10 +424,10 @@ const simulatorHTML = `<!doctype html>
             <option value="doubao_realtime">Doubao realtime</option>
           </select>
           <select id="voiceCloneProfile" aria-label="voice clone profile">
-            <option value="a21_voice_default_dashscope">A21 natural voice</option>
+            <option value="a21_voice_default_dashscope">紫悦自然声音</option>
           </select>
           <select id="roleplayProfile" aria-label="roleplay soul profile">
-            <option value="a21_roleplay_default">A21 desk workmate</option>
+            <option value="a21_roleplay_default">紫悦桌面伙伴</option>
           </select>
           <select id="roleplayScenario" aria-label="roleplay scenario">
             <option value="desk_mouthpiece">desk_mouthpiece</option>
@@ -458,8 +458,8 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>LLM</label><div id="cascadeLLMProfileReadout">stepfun</div></div>
           <div class="metric"><label>TTS</label><div id="selectedTTSProfileReadout">dashscope_qwen_tts_realtime</div></div>
           <div class="metric"><label>Realtime</label><div id="realtimeProviderReadout">doubao_realtime</div></div>
-          <div class="metric"><label>Voice Name</label><div id="voiceCloneProfileReadout">A21 natural voice</div></div>
-          <div class="metric"><label>Soul</label><div id="roleplaySoulReadout">A21 desk workmate</div></div>
+          <div class="metric"><label>Voice Name</label><div id="voiceCloneProfileReadout">紫悦自然声音</div></div>
+          <div class="metric"><label>Soul</label><div id="roleplaySoulReadout">紫悦桌面伙伴</div></div>
           <div class="metric"><label>Memory</label><div id="roleplayMemoryReadout">empty / 0</div></div>
           <div class="metric"><label>Expression</label><div id="roleplayExpressionReadout">no-send / 0</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>

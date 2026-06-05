@@ -19,6 +19,68 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 18:38 CST - Internal Test 4 Trial Hotspot NVS Updated
+
+Round goal:
+
+- Re-provision the product StackChan NVS for the operator's second trial-site
+  hotspot before internal test 4 handoff, without flashing the app partition or
+  writing Wi-Fi credentials into repository files.
+
+Actual completed work:
+
+- Created a temporary foreground hardware-window branch/worktree solely for
+  the guarded NVS write, because the NVS execute guard rejects detached HEAD.
+- Ran the product-safe
+  `a21-stackchan-official-xiaozhi-compatible-nvs-execute` lane against
+  `/dev/cu.usbmodem1101` with public A21 Gateway OTA/WS endpoints.
+- The first detached temporary worktree attempt was blocked before write by
+  the control guard; no NVS mutation occurred in that attempt.
+- The second guarded branch worktree attempt passed and wrote the NVS
+  partition.
+- Confirmed public Gateway `/healthz` and `/xiaozhi/ota/` respond after the
+  NVS write.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- NVS execution report was written under the redacted temporary hardware-window
+  worktree's `reports/` directory as
+  `a21-stackchan-official-xiaozhi-compatible-nvs-20260605-183754-1780655874590780000.json`.
+- Report status `passed`, `write_executed=true`,
+  `wifi_credentials_written=true`, `servo_calibration_present=true`,
+  `app_config_marked_configured=true`, `preserved_entry_count=25`, and
+  `mutated_entry_count=6`.
+- Report safety confirms value redaction and existing-entry preservation.
+- Public Gateway device list did not show product device
+  `44:1b:f6:e2:6a:60` online immediately after the write; this is expected if
+  the trial hotspot is not active or the device has not finished reconnecting.
+
+Known risks/blockers:
+
+- The current official-compatible NVS writer has single-slot Wi-Fi semantics:
+  an explicit new Wi-Fi credential write replaces the previous stored hotspot
+  entry instead of appending a multi-network roaming list.
+- User self-service no-preloaded-Wi-Fi provisioning remains unaccepted for
+  internal test 4. This trial handoff relies on the preloaded hotspot NVS.
+- The NVS worktree `.a21-run` files may contain local Wi-Fi values and must not
+  be archived, copied into the repository, or uploaded to GitHub.
+
+Recommended next action:
+
+- With the trial hotspot active, power-cycle the product StackChan and verify
+  it appears online on public Gateway as `44:1b:f6:e2:6a:60`, then enter
+  AI.AGENT for voice and body acceptance.
+
+Forbidden actions avoided:
+
+- No app flash, no generic `xiaozhi.bin` product lane, no provider key in
+  firmware, no Git prune/gc, and no rollback of internal-test3 voice/protocol
+  changes.
+
 ## 2026-06-05 18:16 CST - Body Relay Bad Flash Recovered
 
 Round goal:
@@ -20823,6 +20885,164 @@ Recommended next action:
 - After firmware is fixed, run one physical `/v1/xiaozhi/say` or
   `stackchan-local-tts-playback` check to confirm the cloned voice reaches the
   device speaker.
+
+## 2026-06-05 18:24 CST - Real DashScope CosyVoice Clone Voice ID Activated
+
+Round goal:
+
+- Replace the earlier default CosyVoice system voice with a real DashScope
+  CosyVoice cloned `voice_id` created from the user's provided reference sound.
+
+Actual completed work:
+
+- Diagnosed the prior "voice clone" output as a default system voice path:
+  `/opt/a21/scripts/a21_dashscope_cosyvoice_tts.py` accepted
+  `--ref-audio`, but the WebSocket payload only used the `voice` field and did
+  not upload the reference audio for enrollment.
+- Temporarily exposed the extracted user reference audio through Caddy so
+  DashScope's voice enrollment API could fetch it.
+- Called the DashScope voice enrollment HTTP API and created a real cloned
+  CosyVoice voice ID for target model `cosyvoice-v3-flash`.
+- Updated `/etc/a21/secrets/provider.env` so Gateway TTS now uses the created
+  CosyVoice cloned voice ID through `A21_DASHSCOPE_COSYVOICE_VOICE`, with
+  `A21_TTS_FAST_PROFILE=voice_clone_cli` and
+  `A21_VOICE_CLONE_PROFILE=a21_voice_clone_default`.
+- Restarted `a21-gateway`.
+- Generated a new local desktop preview:
+  `/Users/jiyurun/Desktop/A21-真实复刻音色试听.wav`.
+- Removed the temporary public Caddy reference-audio route and deleted the
+  public copy of the reference audio.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+
+Runtime results:
+
+- DashScope voice enrollment returned a real cloned `voice_id` for
+  `cosyvoice-v3-flash`.
+- New ECS `voice_clone_cli` preview smoke passed and reported the new cloned
+  voice ID rather than the earlier default `a21_dashscope_cosyvoice` persona.
+- Desktop preview WAV is 16 kHz mono PCM and ready for listening.
+- `a21-gateway` and Caddy are both active and public `/healthz` passes.
+
+Known risks/blockers:
+
+- StackChan physical playback remains intentionally untested because the user
+  asked not to play while firmware is being fixed.
+
+Recommended next action:
+
+- User should listen to
+  `/Users/jiyurun/Desktop/A21-真实复刻音色试听.wav`; if accepted, keep the current
+  Gateway env as the fixed TTS voice for the next several days.
+
+## 2026-06-05 18:27 CST - User-Facing Role Name Fixed To Zi Yue
+
+Round goal:
+
+- Make the spoken/user-facing role call itself `紫悦`, not `A21`, while
+  preserving A21 as the project/service namespace.
+
+Actual completed work:
+
+- Updated `docs/personality/core_identity.md` to state that the embodied
+  user-facing role is named `紫悦` and must introduce/refer to itself as `紫悦`
+  in speech and conversation.
+- Updated the default role soul title to `紫悦 Desk Workmate`.
+- Synced the two personality files to ECS under `/opt/a21/docs/personality/`.
+- Updated ECS `A21_VOICE_PERSONA` to `紫悦`.
+- Restarted `a21-gateway`.
+- Generated a new desktop preview:
+  `/Users/jiyurun/Desktop/紫悦-真实复刻音色试听.wav`.
+
+Changed files:
+
+- `docs/personality/core_identity.md`
+- `docs/personality/role_souls/default.md`
+- `docs/agent_handoff_log.md`
+
+Runtime results:
+
+- Public `/healthz` passed.
+- Public voice chain remains `voice_clone_cli` with
+  `a21_voice_clone_default`.
+- ECS prompt assets now contain the `紫悦` self-name rule.
+
+Known risks/blockers:
+
+- This does not rename the A21 project/service namespace, env vars, ports, or
+  logs. Only the user-facing role name changed.
+
+## 2026-06-05 18:36 CST - Zi Yue Character Fit And Display Labels Deployed
+
+Round goal:
+
+- Make the `紫悦` user-facing role fit Twilight Sparkle / My Little Pony
+  character traits more closely, and remove remaining user-visible `A21` role
+  or voice display labels.
+
+Actual completed work:
+
+- Looked up stable public character references for Twilight Sparkle: studious,
+  bookish, magic-oriented, friendship-centered, organized, and warm leadership
+  under pressure.
+- Updated the default role soul with Chinese character-fit rules: clear lists,
+  facts, clues, magic/friendship language, warmth, and no copied show lines.
+- Added a core-identity boundary that `紫悦` captures broad character shape
+  through behavior and Chinese wording while preserving the A21 project
+  namespace.
+- Changed Gateway user-facing labels from `A21 natural voice`,
+  `A21 cloned voice`, and `A21 desk workmate` to `紫悦自然声音`,
+  `紫悦克隆声音`, and `紫悦桌面伙伴`.
+- Deployed a clean selected-file ECS build from `git archive HEAD` plus only
+  this round's dirty files, then safe-swapped `/opt/a21.next` to `/opt/a21` and
+  restarted `a21-gateway`.
+- Generated and copied the new desktop preview
+  `/Users/jiyurun/Desktop/紫悦-角色贴合试听.wav`.
+
+Changed files:
+
+- `docs/personality/core_identity.md`
+- `docs/personality/role_souls/default.md`
+- `internal/personality/composer_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/simulator.go`
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Local `go test ./internal/personality -count=1`: passed.
+- Local focused `go test ./internal/personality ./internal/gateway -run
+  'TestPersonalityComposeRoleSoulAddsOnlySelectedSoul|TestWorkspaceConsolePageServed|TestVoiceChainProfile|TestRoleplayProfile'
+  -count=1`: passed.
+- Local `git diff --check`: passed.
+- Remote focused personality/Gateway tests passed.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21`: passed.
+- Remote `a21-gateway` restarted active and public `/healthz` passed.
+- Public `/v1/voice-chain-profiles` reports
+  `selected_tts_profile=voice_clone_cli`,
+  `selected_voice_clone_profile=a21_voice_clone_default`, and voice labels
+  `紫悦自然声音` / `紫悦克隆声音`.
+- Public `/v1/roleplay-profile` reports default profile label `紫悦桌面伙伴`.
+- Public `/workspace` contains `紫悦桌面伙伴`, `紫悦克隆声音`, and the Chinese
+  workspace readiness text.
+- Desktop preview WAV is 16 kHz mono PCM, 11.25 seconds, 360000 audio bytes.
+
+Known risks/blockers:
+
+- StackChan physical playback remains intentionally untested because the user
+  asked not to play while firmware is being fixed.
+- A21 IDs, env vars, services, and logs intentionally remain in the `a21` /
+  `A21_` namespace per project guardrails; only user-facing labels changed.
+
+Recommended next action:
+
+- User listens to `/Users/jiyurun/Desktop/紫悦-角色贴合试听.wav`; after firmware is
+  fixed, run one physical no-send-to-playback-controlled validation to confirm
+  the cloned TTS reaches StackChan speaker with the same voice chain.
 
 ## 2026-06-05 16:50 CST - Xiaozhi Official Auto-Listen State Parity Candidate
 

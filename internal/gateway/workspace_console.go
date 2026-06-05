@@ -20,7 +20,7 @@ const workspaceConsoleHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:,">
-  <title>A21 Workspace Console</title>
+  <title>A21 工作台控制台</title>
   <style>
     :root {
       color-scheme: light;
@@ -297,432 +297,432 @@ const workspaceConsoleHTML = `<!doctype html>
 <body>
   <div class="shell" data-testid="workspace-console-root">
     <header>
-      <h1>A21 Workspace Console</h1>
-      <div class="header-meta"><span class="status-dot"></span><span id="serviceStatus">gateway contract</span></div>
+      <h1>A21 工作台控制台</h1>
+      <div class="header-meta"><span class="status-dot"></span><span id="serviceStatus">网关契约</span></div>
     </header>
     <main>
-      <section aria-label="Workspace setup">
+      <section aria-label="工作台设置">
         <div class="panel-head">
-          <h2>Workspace</h2>
-          <button class="secondary" id="refreshWorkspace">Refresh</button>
+          <h2>工作台</h2>
+          <button class="secondary" id="refreshWorkspace">刷新</button>
         </div>
         <div class="panel-body">
           <div class="grid">
-            <label>Query scope
+            <label>查询范围
               <select id="queryScope">
-                <option value="public_only">public_only</option>
-                <option value="personal_only">personal_only</option>
-                <option value="personal_plus_public">personal_plus_public</option>
+                <option value="public_only">仅公共</option>
+                <option value="personal_only">仅个人</option>
+                <option value="personal_plus_public">个人 + 公共</option>
               </select>
             </label>
-            <label>Document label
+            <label>文档标签
               <input id="documentLabel" value="A21 PRD pack" autocomplete="off">
             </label>
-            <label>Device
+            <label>设备
               <input id="deviceId" value="stackchan-sim-001" autocomplete="off">
             </label>
           </div>
-          <label>Document
+          <label>文档
             <input id="documentFile" type="file">
           </label>
           <div class="actions">
-            <button id="uploadDocument">Upload</button>
-            <button id="requestIndex">Request index</button>
-            <button class="secondary" id="bindDevice">Bind device</button>
-            <button class="secondary" id="revokeDevice">Revoke device</button>
-            <button class="secondary" id="refreshConnectedDevice">Connected device</button>
-            <button class="secondary" id="refreshDeviceBindings">Device bindings</button>
-            <button class="secondary" id="deleteSource">Delete source</button>
-            <button class="secondary" id="exportMetadata">Export metadata</button>
-            <button class="secondary" id="refreshSources">Sources</button>
-            <button class="secondary" id="refreshReads">Read records</button>
+            <button id="uploadDocument">上传文档</button>
+            <button id="requestIndex">请求索引</button>
+            <button class="secondary" id="bindDevice">绑定设备</button>
+            <button class="secondary" id="revokeDevice">撤销绑定</button>
+            <button class="secondary" id="refreshConnectedDevice">连接设备</button>
+            <button class="secondary" id="refreshDeviceBindings">设备绑定</button>
+            <button class="secondary" id="deleteSource">删除来源</button>
+            <button class="secondary" id="exportMetadata">导出元数据</button>
+            <button class="secondary" id="refreshSources">来源列表</button>
+            <button class="secondary" id="refreshReads">读取记录</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Storage</span><strong id="storageStatus">stored_local pending</strong></div>
-            <div class="metric"><span>Index</span><strong id="indexStatus">not_started_no_execute</strong></div>
-            <div class="metric"><span>Searchable</span><strong id="searchableStatus">false</strong></div>
-            <div class="metric"><span>Device binding</span><strong id="deviceBindingStatus">binding_not_configured</strong></div>
+            <div class="metric"><span>存储</span><strong id="storageStatus">本地已存，待索引</strong></div>
+            <div class="metric"><span>索引</span><strong id="indexStatus">未开始，不执行</strong></div>
+            <div class="metric"><span>可检索</span><strong id="searchableStatus">否</strong></div>
+            <div class="metric"><span>设备绑定</span><strong id="deviceBindingStatus">尚未配置绑定</strong></div>
           </div>
         </div>
       </section>
 
-      <section aria-label="Readiness">
+      <section aria-label="就绪状态">
         <div class="panel-head">
-          <h2>Readiness</h2>
+          <h2>就绪状态</h2>
           <div class="tagline">
-            <span class="tag ready" id="workspaceStatus">contract_ready</span>
-            <span class="tag warn" id="adapterStatus">a21.v21_adapter_query.v2</span>
+            <span class="tag ready" id="workspaceStatus">契约就绪</span>
+            <span class="tag warn" id="adapterStatus">V21 适配器契约 v2</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="status-strip">
-            <div class="metric"><span>User</span><strong id="userId">a21_local_user</strong></div>
-            <div class="metric"><span>Workspace</span><strong id="workspaceId">a21_local_workspace</strong></div>
-            <div class="metric"><span>Sources</span><strong id="sourceCount">0</strong></div>
-            <div class="metric"><span>Devices</span><strong id="deviceBindingCount">0</strong></div>
-            <div class="metric"><span>Reads</span><strong id="readCount">0</strong></div>
+            <div class="metric"><span>用户</span><strong id="userId">a21_local_user</strong></div>
+            <div class="metric"><span>工作台</span><strong id="workspaceId">a21_local_workspace</strong></div>
+            <div class="metric"><span>来源</span><strong id="sourceCount">0</strong></div>
+            <div class="metric"><span>设备</span><strong id="deviceBindingCount">0</strong></div>
+            <div class="metric"><span>读取</span><strong id="readCount">0</strong></div>
           </div>
           <div class="grid">
-            <label>Read record id
+            <label>读取记录 ID
               <input id="readRecordFilter" placeholder="record_id" autocomplete="off">
             </label>
-            <label>Read trace id
+            <label>追踪 ID
               <input id="readTraceFilter" placeholder="trace_id" autocomplete="off">
             </label>
-            <label>Read session id
+            <label>会话 ID
               <input id="readSessionFilter" placeholder="session_id" autocomplete="off">
             </label>
             <div class="actions">
-              <button class="secondary" id="clearReadFilters">Clear filters</button>
+              <button class="secondary" id="clearReadFilters">清空筛选</button>
             </div>
           </div>
           <div class="stack">
-            <div class="row-list" id="sourceList" aria-label="Workspace sources"></div>
-            <div class="row-list" id="readList" aria-label="Professional read records"></div>
+            <div class="row-list" id="sourceList" aria-label="工作台来源"></div>
+            <div class="row-list" id="readList" aria-label="专业读取记录"></div>
           </div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Roleplay setup">
+      <section class="wide" aria-label="陪伴模式设置">
         <div class="panel-head">
-          <h2>Roleplay Setup</h2>
+          <h2>陪伴模式设置</h2>
           <div class="tagline">
-            <span class="tag ready" id="roleplayPromptStatus">prompt_input_ready=false</span>
-            <span class="tag warn" id="roleplayPhysicalStatus">physical_accepted=false</span>
+            <span class="tag ready" id="roleplayPromptStatus">提示输入就绪=否</span>
+            <span class="tag warn" id="roleplayPhysicalStatus">实体验收=否</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="grid">
-            <label>Role soul
+            <label>角色设定
               <select id="roleplayProfileSelect"></select>
             </label>
-            <label>Scenario
+            <label>场景
               <select id="roleplayScenarioSelect"></select>
             </label>
-            <label>Voice profile
+            <label>声音档案
               <select id="roleplayVoiceSelect"></select>
             </label>
-            <label>Memory hint
-              <input id="roleplayMemoryHint" placeholder="bounded session hint" autocomplete="off">
+            <label>记忆提示
+              <input id="roleplayMemoryHint" placeholder="本轮边界内提示" autocomplete="off">
             </label>
           </div>
           <div class="actions">
-            <button id="saveRoleplaySetup">Save roleplay</button>
-            <button class="secondary" id="clearRoleplayMemory">Clear memory</button>
+            <button id="saveRoleplaySetup">保存陪伴模式</button>
+            <button class="secondary" id="clearRoleplayMemory">清空记忆</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Role soul</span><strong id="roleplayProfileStatus">a21_roleplay_default</strong></div>
-            <div class="metric"><span>Scenario</span><strong id="roleplayScenarioStatus">desk_mouthpiece</strong></div>
-            <div class="metric"><span>Voice profile</span><strong id="roleplayVoiceStatus">a21_voice_default_dashscope</strong></div>
-            <div class="metric"><span>Memory</span><strong id="roleplayMemoryStatus">empty / 0</strong></div>
+            <div class="metric"><span>角色设定</span><strong id="roleplayProfileStatus">a21_roleplay_default</strong></div>
+            <div class="metric"><span>场景</span><strong id="roleplayScenarioStatus">desk_mouthpiece</strong></div>
+            <div class="metric"><span>声音档案</span><strong id="roleplayVoiceStatus">a21_voice_default_dashscope</strong></div>
+            <div class="metric"><span>记忆</span><strong id="roleplayMemoryStatus">空 / 0</strong></div>
           </div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Voice chain setup">
+      <section class="wide" aria-label="语音链路设置">
         <div class="panel-head">
-          <h2>Voice Chain Setup</h2>
+          <h2>语音链路设置</h2>
           <div class="tagline">
-            <span class="tag ready" id="voiceChainHotSwitchStatus">hot_switch=true</span>
-            <span class="tag warn" id="voiceChainFindingStatus">stepfun_not_selected</span>
+            <span class="tag ready" id="voiceChainHotSwitchStatus">热切换=是</span>
+            <span class="tag warn" id="voiceChainFindingStatus">StepFun 未选择</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="grid">
-            <label>Chain mode
+            <label>链路模式
               <select id="voiceChainModeSelect"></select>
             </label>
-            <label>ASR profile
+            <label>语音识别档案
               <select id="voiceChainASRSelect"></select>
             </label>
-            <label>LLM profile
+            <label>大模型档案
               <select id="voiceChainLLMSelect"></select>
             </label>
-            <label>Realtime provider
+            <label>实时通道
               <select id="voiceChainRealtimeSelect"></select>
             </label>
           </div>
           <div class="actions">
-            <button id="saveVoiceChainSetup">Save voice chain</button>
+            <button id="saveVoiceChainSetup">保存语音链路</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Chain</span><strong id="voiceChainModeStatus">cascade</strong></div>
+            <div class="metric"><span>链路</span><strong id="voiceChainModeStatus">cascade</strong></div>
             <div class="metric"><span>ASR</span><strong id="voiceChainASRStatus">dashscope_qwen_asr_realtime</strong></div>
             <div class="metric"><span>LLM</span><strong id="voiceChainLLMStatus">stepfun</strong></div>
-            <div class="metric"><span>Effective TTS</span><strong id="voiceChainTTSStatus">dashscope_qwen_tts_realtime</strong></div>
-            <div class="metric"><span>Realtime</span><strong id="voiceChainRealtimeStatus">doubao_realtime</strong></div>
+            <div class="metric"><span>生效 TTS</span><strong id="voiceChainTTSStatus">dashscope_qwen_tts_realtime</strong></div>
+            <div class="metric"><span>实时通道</span><strong id="voiceChainRealtimeStatus">doubao_realtime</strong></div>
           </div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Wake word setup">
+      <section class="wide" aria-label="唤醒词设置">
         <div class="panel-head">
-          <h2>Wake Word Setup</h2>
+          <h2>唤醒词设置</h2>
           <div class="tagline">
-            <span class="tag warn" id="wakeWordBuildStatus">build_required=false</span>
-            <span class="tag off" id="wakeWordHotSwapStatus">runtime_hot_swap=false</span>
+            <span class="tag warn" id="wakeWordBuildStatus">需要构建=否</span>
+            <span class="tag off" id="wakeWordHotSwapStatus">运行时热切换=否</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="grid">
-            <label>Wake mode
+            <label>唤醒模式
               <select id="wakeWordModeSelect">
-                <option value="builtin_xiaozhi">builtin_xiaozhi</option>
-                <option value="custom_multinet">custom_multinet</option>
+                <option value="builtin_xiaozhi">内置小智</option>
+                <option value="custom_multinet">自定义 MultiNet</option>
               </select>
             </label>
-            <label>Desired phrase
+            <label>目标唤醒词
               <input id="wakeWordPhrase" value="小阿二一" autocomplete="off">
             </label>
-            <label>Desired pinyin
+            <label>目标拼音
               <input id="wakeWordPinyin" value="xiao a er yi" autocomplete="off">
             </label>
-            <label>Threshold
+            <label>阈值
               <input id="wakeWordThreshold" type="number" min="1" max="100" value="30">
             </label>
           </div>
           <div class="actions">
-            <button id="saveWakeWordSetup">Save wake word</button>
-            <button class="secondary" id="resetWakeWordSetup">Reset builtin</button>
+            <button id="saveWakeWordSetup">保存唤醒词</button>
+            <button class="secondary" id="resetWakeWordSetup">恢复内置</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Active phrase</span><strong id="wakeWordActiveStatus">你好小智</strong></div>
-            <div class="metric"><span>Runtime</span><strong id="wakeWordRuntimeStatus">active_builtin_model</strong></div>
-            <div class="metric"><span>Firmware</span><strong id="wakeWordFirmwareStatus">builtin_active</strong></div>
-            <div class="metric"><span>Code</span><strong id="wakeWordCodeStatus">none</strong></div>
+            <div class="metric"><span>当前唤醒词</span><strong id="wakeWordActiveStatus">你好小智</strong></div>
+            <div class="metric"><span>运行时</span><strong id="wakeWordRuntimeStatus">active_builtin_model</strong></div>
+            <div class="metric"><span>固件</span><strong id="wakeWordFirmwareStatus">builtin_active</strong></div>
+            <div class="metric"><span>代码</span><strong id="wakeWordCodeStatus">无</strong></div>
           </div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Voice probe">
+      <section class="wide" aria-label="语音探针">
         <div class="panel-head">
-          <h2>Voice Probe</h2>
+          <h2>语音探针</h2>
           <div class="tagline">
-            <span class="tag ready" id="voiceProbeRouteStatus">route=idle</span>
-            <span class="tag warn" id="voiceProbeTraceStatus">trace=none</span>
+            <span class="tag ready" id="voiceProbeRouteStatus">路径=空闲</span>
+            <span class="tag warn" id="voiceProbeTraceStatus">追踪=无</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="grid">
-            <label>Probe mode
+            <label>探针模式
               <select id="voiceProbeModeSelect">
-                <option value="roleplay">roleplay</option>
-                <option value="professional">professional</option>
+                <option value="roleplay">陪伴模式</option>
+                <option value="professional">专业模式</option>
               </select>
             </label>
-            <label>Probe cue
-              <input id="voiceProbeInput" placeholder="safe short cue" autocomplete="off">
+            <label>探针提示
+              <input id="voiceProbeInput" placeholder="安全短提示" autocomplete="off">
             </label>
           </div>
           <div class="actions">
-            <button id="runRoleplayProbe">Run roleplay probe</button>
-            <button id="runProfessionalProbe">Run professional probe</button>
-            <button class="secondary" id="refreshVoiceProbeTrace">Trace markers</button>
+            <button id="runRoleplayProbe">运行陪伴探针</button>
+            <button id="runProfessionalProbe">运行专业探针</button>
+            <button class="secondary" id="refreshVoiceProbeTrace">追踪标记</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Role soul</span><strong id="voiceProbeRoleplayStatus">none</strong></div>
-            <div class="metric"><span>Voice profile</span><strong id="voiceProbeVoiceStatus">none</strong></div>
-            <div class="metric"><span>Memory</span><strong id="voiceProbeMemoryStatus">none</strong></div>
-            <div class="metric"><span>Professional</span><strong id="voiceProbeProfessionalStatus">idle</strong></div>
+            <div class="metric"><span>角色设定</span><strong id="voiceProbeRoleplayStatus">无</strong></div>
+            <div class="metric"><span>声音档案</span><strong id="voiceProbeVoiceStatus">无</strong></div>
+            <div class="metric"><span>记忆</span><strong id="voiceProbeMemoryStatus">无</strong></div>
+            <div class="metric"><span>专业模式</span><strong id="voiceProbeProfessionalStatus">空闲</strong></div>
           </div>
           <div class="stack">
-            <div class="row-list" id="voiceProbeTraceList" aria-label="Voice probe trace markers"></div>
-            <div class="row-list" id="voiceProbeReadList" aria-label="Voice probe read records"></div>
+            <div class="row-list" id="voiceProbeTraceList" aria-label="语音探针追踪标记"></div>
+            <div class="row-list" id="voiceProbeReadList" aria-label="语音探针读取记录"></div>
           </div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Body presets">
+      <section class="wide" aria-label="机身预设">
         <div class="panel-head">
-          <h2>Body Presets</h2>
+          <h2>机身预设</h2>
           <div class="tagline">
-            <span class="tag ready" id="bodyPresetStatus">preset=idle</span>
-            <span class="tag warn" id="bodyPresetPhysicalStatus">physical_accepted=false</span>
+            <span class="tag ready" id="bodyPresetStatus">姿态=空闲</span>
+            <span class="tag warn" id="bodyPresetPhysicalStatus">实体验收=否</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="actions" id="bodyPresetActions">
-            <button class="secondary" data-body-preset="ready">Ready</button>
-            <button class="secondary" data-body-preset="listening">Listen</button>
-            <button class="secondary" data-body-preset="thinking">Think</button>
-            <button class="secondary" data-body-preset="speaking">Speak</button>
-            <button data-body-preset="celebrate">Celebrate</button>
-            <button class="secondary" data-body-preset="reset_idle">Reset</button>
-            <button class="secondary" data-body-motion="look_up">Look up</button>
-            <button class="secondary" data-body-motion="nod">Nod</button>
-            <button class="secondary" data-body-motion="shake">Shake</button>
-            <button class="secondary" data-body-motion="dance">MCP dance</button>
-            <button class="secondary" data-body-motion="stop">Stop motion</button>
-            <button class="secondary" id="refreshBodyPresetTrace">Trace markers</button>
+            <button class="secondary" data-body-preset="ready">准备</button>
+            <button class="secondary" data-body-preset="listening">聆听</button>
+            <button class="secondary" data-body-preset="thinking">思考</button>
+            <button class="secondary" data-body-preset="speaking">说话</button>
+            <button data-body-preset="celebrate">庆祝</button>
+            <button class="secondary" data-body-preset="reset_idle">复位</button>
+            <button class="secondary" data-body-motion="look_up">抬头</button>
+            <button class="secondary" data-body-motion="nod">点头</button>
+            <button class="secondary" data-body-motion="shake">摇头</button>
+            <button class="secondary" data-body-motion="dance">MCP 舞动</button>
+            <button class="secondary" data-body-motion="stop">停止动作</button>
+            <button class="secondary" id="refreshBodyPresetTrace">追踪标记</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Trace</span><strong id="bodyPresetTraceStatus">trace=none</strong></div>
-            <div class="metric"><span>LED</span><strong id="bodyPresetLEDStatus">rgb=none</strong></div>
-            <div class="metric"><span>Head</span><strong id="bodyPresetHeadStatus">pose=none</strong></div>
-            <div class="metric"><span>Transport</span><strong id="bodyPresetTransportStatus">xiaozhi_mcp_sequence</strong></div>
+            <div class="metric"><span>追踪</span><strong id="bodyPresetTraceStatus">追踪=无</strong></div>
+            <div class="metric"><span>RGB 灯</span><strong id="bodyPresetLEDStatus">RGB=无</strong></div>
+            <div class="metric"><span>头部</span><strong id="bodyPresetHeadStatus">姿态=无</strong></div>
+            <div class="metric"><span>传输</span><strong id="bodyPresetTransportStatus">小智 MCP 序列</strong></div>
           </div>
-          <div class="row-list" id="bodyPresetTraceList" aria-label="Body preset trace markers"></div>
+          <div class="row-list" id="bodyPresetTraceList" aria-label="机身预设追踪标记"></div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Hardware scenes">
+      <section class="wide" aria-label="硬件场景">
         <div class="panel-head">
-          <h2>Hardware Scenes</h2>
+          <h2>硬件场景</h2>
           <div class="tagline">
-            <span class="tag ready" id="hardwareSceneStatus">scene=idle</span>
-            <span class="tag warn" id="hardwareScenePhysicalStatus">physical_accepted=false</span>
+            <span class="tag ready" id="hardwareSceneStatus">场景=空闲</span>
+            <span class="tag warn" id="hardwareScenePhysicalStatus">实体验收=否</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="actions" id="hardwareSceneActions">
-            <button data-hardware-scene="full_check">Full Check</button>
-            <button class="secondary" data-hardware-scene="showtime">Showtime</button>
-            <button class="secondary" data-hardware-scene="focus">Focus</button>
-            <button class="secondary" data-hardware-scene="reset">Reset</button>
-            <button class="secondary" id="acceptHardwareScenePhysical">Accept Visible Full Check</button>
-            <button class="secondary" id="refreshHardwareSceneTrace">Trace markers</button>
+            <button data-hardware-scene="full_check">全量检查</button>
+            <button class="secondary" data-hardware-scene="showtime">展示</button>
+            <button class="secondary" data-hardware-scene="focus">专注</button>
+            <button class="secondary" data-hardware-scene="reset">复位</button>
+            <button class="secondary" id="acceptHardwareScenePhysical">确认可见全量检查</button>
+            <button class="secondary" id="refreshHardwareSceneTrace">追踪标记</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Trace</span><strong id="hardwareSceneTraceStatus">trace=none</strong></div>
-            <div class="metric"><span>Screen</span><strong id="hardwareSceneScreenStatus">screen=none</strong></div>
-            <div class="metric"><span>Body</span><strong id="hardwareSceneBodyStatus">body=none</strong></div>
-            <div class="metric"><span>Steps</span><strong id="hardwareSceneStepStatus">steps=0</strong></div>
-            <div class="metric"><span>Transport</span><strong id="hardwareSceneTransportStatus">xiaozhi_mcp_sequence</strong></div>
-            <div class="metric"><span>Acceptance</span><strong id="hardwareSceneAcceptanceStatus">operator_pending</strong></div>
+            <div class="metric"><span>追踪</span><strong id="hardwareSceneTraceStatus">追踪=无</strong></div>
+            <div class="metric"><span>屏幕</span><strong id="hardwareSceneScreenStatus">屏幕=无</strong></div>
+            <div class="metric"><span>机身</span><strong id="hardwareSceneBodyStatus">机身=无</strong></div>
+            <div class="metric"><span>步数</span><strong id="hardwareSceneStepStatus">步数=0</strong></div>
+            <div class="metric"><span>传输</span><strong id="hardwareSceneTransportStatus">小智 MCP 序列</strong></div>
+            <div class="metric"><span>验收</span><strong id="hardwareSceneAcceptanceStatus">等待操作员确认</strong></div>
           </div>
-          <div class="row-list" id="hardwareSceneTraceList" aria-label="Hardware scene trace markers"></div>
+          <div class="row-list" id="hardwareSceneTraceList" aria-label="硬件场景追踪标记"></div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Hardware screen">
+      <section class="wide" aria-label="屏幕控制">
         <div class="panel-head">
-          <h2>Hardware Screen</h2>
+          <h2>屏幕控制</h2>
           <div class="tagline">
-            <span class="tag ready" id="hardwareScreenStatus">screen=idle</span>
-            <span class="tag warn" id="hardwareScreenPhysicalStatus">physical_accepted=false</span>
+            <span class="tag ready" id="hardwareScreenStatus">屏幕=空闲</span>
+            <span class="tag warn" id="hardwareScreenPhysicalStatus">实体验收=否</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="grid">
-            <label>Brightness
+            <label>亮度
               <input id="screenBrightness" type="range" min="0" max="100" step="1" value="55">
             </label>
-            <label>Level
+            <label>数值
               <input id="screenBrightnessValue" value="55" readonly>
             </label>
           </div>
           <div class="actions">
-            <button id="applyScreenBrightness">Apply brightness</button>
-            <button class="secondary" data-screen-theme="light">Light</button>
-            <button class="secondary" data-screen-theme="dark">Dark</button>
-            <button class="secondary" data-screen-theme="auto">Auto</button>
-            <button class="secondary" id="runDeviceStatus">Device status</button>
-            <button class="secondary" id="runScreenInfo">Screen info</button>
-            <button class="secondary" id="refreshMCPCapabilities">Capabilities</button>
-            <button class="secondary" id="refreshHardwareScreenTrace">Trace markers</button>
+            <button id="applyScreenBrightness">应用亮度</button>
+            <button class="secondary" data-screen-theme="light">浅色</button>
+            <button class="secondary" data-screen-theme="dark">深色</button>
+            <button class="secondary" data-screen-theme="auto">自动</button>
+            <button class="secondary" id="runDeviceStatus">设备状态</button>
+            <button class="secondary" id="runScreenInfo">屏幕信息</button>
+            <button class="secondary" id="refreshMCPCapabilities">能力</button>
+            <button class="secondary" id="refreshHardwareScreenTrace">追踪标记</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Trace</span><strong id="hardwareScreenTraceStatus">trace=none</strong></div>
-            <div class="metric"><span>Brightness</span><strong id="screenBrightnessStatus">brightness=55</strong></div>
-            <div class="metric"><span>Theme</span><strong id="screenThemeStatus">theme=none</strong></div>
-            <div class="metric"><span>Tool</span><strong id="screenToolStatus">tool=none</strong></div>
-            <div class="metric"><span>Capabilities</span><strong id="mcpCapabilitiesStatus">mcp=unknown</strong></div>
+            <div class="metric"><span>追踪</span><strong id="hardwareScreenTraceStatus">追踪=无</strong></div>
+            <div class="metric"><span>亮度</span><strong id="screenBrightnessStatus">亮度=55</strong></div>
+            <div class="metric"><span>主题</span><strong id="screenThemeStatus">主题=无</strong></div>
+            <div class="metric"><span>工具</span><strong id="screenToolStatus">工具=无</strong></div>
+            <div class="metric"><span>能力</span><strong id="mcpCapabilitiesStatus">MCP=未知</strong></div>
           </div>
-          <div class="row-list" id="hardwareScreenTraceList" aria-label="Hardware screen trace markers"></div>
+          <div class="row-list" id="hardwareScreenTraceList" aria-label="屏幕控制追踪标记"></div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Official actions">
+      <section class="wide" aria-label="官方动作">
         <div class="panel-head">
-          <h2>Official Actions</h2>
+          <h2>官方动作</h2>
           <div class="tagline">
-            <span class="tag ready" id="officialActionStatus">action=idle</span>
-            <span class="tag warn" id="officialRelayStatus">relay=unknown</span>
-            <span class="tag warn" id="officialActionPhysicalStatus">physical_accepted=false</span>
+            <span class="tag ready" id="officialActionStatus">动作=空闲</span>
+            <span class="tag warn" id="officialRelayStatus">中继=未知</span>
+            <span class="tag warn" id="officialActionPhysicalStatus">实体验收=否</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="grid">
-            <label>Pitch angle
+            <label>俯仰角
               <input id="officialActionYAngle" type="range" min="5" max="85" step="1" value="38">
             </label>
-            <label>Angle
+            <label>角度
               <input id="officialActionYAngleValue" value="38" readonly>
             </label>
           </div>
           <div class="actions" id="officialActionControls">
-            <button class="secondary" data-official-state="idle">Idle</button>
-            <button class="secondary" data-official-state="listening">Listening</button>
-            <button class="secondary" data-official-state="thinking">Thinking</button>
-            <button class="secondary" data-official-state="speaking">Speaking</button>
-            <button class="secondary" data-official-face="happy">Happy</button>
-            <button class="secondary" data-official-face="attentive">Attentive</button>
-            <button class="secondary" data-official-motion="look_up">Look up</button>
-            <button class="secondary" data-official-motion="nod">Nod</button>
-            <button class="secondary" data-official-motion="shake">Shake</button>
-            <button data-official-motion="dance">Dance</button>
-            <button class="secondary" data-official-motion="stop">Stop</button>
-            <button class="secondary" id="refreshOfficialRelayStatus">Relay status</button>
-            <button class="secondary" id="refreshOfficialActionTrace">Trace markers</button>
+            <button class="secondary" data-official-state="idle">待机</button>
+            <button class="secondary" data-official-state="listening">聆听中</button>
+            <button class="secondary" data-official-state="thinking">思考中</button>
+            <button class="secondary" data-official-state="speaking">说话中</button>
+            <button class="secondary" data-official-face="happy">开心</button>
+            <button class="secondary" data-official-face="attentive">专注</button>
+            <button class="secondary" data-official-motion="look_up">抬头</button>
+            <button class="secondary" data-official-motion="nod">点头</button>
+            <button class="secondary" data-official-motion="shake">摇头</button>
+            <button data-official-motion="dance">跳舞</button>
+            <button class="secondary" data-official-motion="stop">停止</button>
+            <button class="secondary" id="refreshOfficialRelayStatus">中继状态</button>
+            <button class="secondary" id="refreshOfficialActionTrace">追踪标记</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Trace</span><strong id="officialActionTraceStatus">trace=none</strong></div>
-            <div class="metric"><span>Event</span><strong id="officialActionEventStatus">event=none</strong></div>
-            <div class="metric"><span>Packets</span><strong id="officialActionPacketStatus">packets=0</strong></div>
-            <div class="metric"><span>Transport</span><strong id="officialActionTransportStatus">stackchan_official_ws</strong></div>
-            <div class="metric"><span>Surfaces</span><strong id="officialActionSurfaceStatus">surfaces=none</strong></div>
-            <div class="metric"><span>Relay</span><strong id="officialRelaySocketStatus">connected=false</strong></div>
-            <div class="metric"><span>Next</span><strong id="officialRelayNextStatus">next=connect_official_stackchan_ws</strong></div>
+            <div class="metric"><span>追踪</span><strong id="officialActionTraceStatus">追踪=无</strong></div>
+            <div class="metric"><span>事件</span><strong id="officialActionEventStatus">事件=无</strong></div>
+            <div class="metric"><span>数据包</span><strong id="officialActionPacketStatus">数据包=0</strong></div>
+            <div class="metric"><span>传输</span><strong id="officialActionTransportStatus">StackChan 官方 WebSocket</strong></div>
+            <div class="metric"><span>硬件面</span><strong id="officialActionSurfaceStatus">硬件面=无</strong></div>
+            <div class="metric"><span>中继</span><strong id="officialRelaySocketStatus">连接=否</strong></div>
+            <div class="metric"><span>下一步</span><strong id="officialRelayNextStatus">下一步=连接官方 StackChan WebSocket</strong></div>
           </div>
-          <div class="row-list" id="officialActionTraceList" aria-label="Official action trace markers"></div>
+          <div class="row-list" id="officialActionTraceList" aria-label="官方动作追踪标记"></div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Mode boundary">
+      <section class="wide" aria-label="模式边界">
         <div class="panel-head">
-          <h2>Mode Boundary</h2>
+          <h2>模式边界</h2>
           <div class="tagline">
-            <span class="tag ready">roleplay</span>
-            <span class="tag warn">professional</span>
-            <span class="tag off">v21_execution_allowed=false</span>
+            <span class="tag ready">陪伴模式</span>
+            <span class="tag warn">专业模式</span>
+            <span class="tag off">V21 执行=否</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="actions" id="modeRitualActions">
-            <button class="secondary" data-mode-ritual="roleplay">Run Roleplay Ritual</button>
-            <button data-mode-ritual="professional">Run Professional Ritual</button>
-            <button class="secondary" id="acceptModeRitualPhysical">Accept Visible Mode Ritual</button>
+            <button class="secondary" data-mode-ritual="roleplay">运行陪伴切换仪式</button>
+            <button data-mode-ritual="professional">运行专业切换仪式</button>
+            <button class="secondary" id="acceptModeRitualPhysical">确认可见模式仪式</button>
           </div>
           <div class="mode-band">
-            <div class="metric"><span>Roleplay expression</span><strong id="roleplayExpression">no_send_plan_only</strong></div>
-            <div class="metric"><span>Professional cue</span><strong id="professionalCue">PRO / checking</strong></div>
-            <div class="metric"><span>Mode ritual</span><strong id="modeRitualStatus">ritual=idle</strong></div>
-            <div class="metric"><span>Ritual trace</span><strong id="modeRitualTraceStatus">trace=none</strong></div>
-            <div class="metric"><span>Physical</span><strong id="modeRitualPhysicalStatus">physical_accepted=false</strong></div>
+            <div class="metric"><span>陪伴表情</span><strong id="roleplayExpression">仅计划，不发送</strong></div>
+            <div class="metric"><span>专业提示</span><strong id="professionalCue">专业 / 检查中</strong></div>
+            <div class="metric"><span>模式仪式</span><strong id="modeRitualStatus">仪式=空闲</strong></div>
+            <div class="metric"><span>仪式追踪</span><strong id="modeRitualTraceStatus">追踪=无</strong></div>
+            <div class="metric"><span>实体验收</span><strong id="modeRitualPhysicalStatus">实体验收=否</strong></div>
           </div>
-          <div class="log" id="eventLog" aria-label="Workspace event log">workspace console ready</div>
+          <div class="log" id="eventLog" aria-label="工作台事件日志">工作台控制台已就绪</div>
         </div>
       </section>
 
-      <section class="wide" aria-label="Hardware acceptance">
+      <section class="wide" aria-label="硬件验收">
         <div class="panel-head">
-          <h2>Acceptance Board</h2>
+          <h2>验收看板</h2>
           <div class="tagline">
-            <span class="tag warn" id="hardwareAcceptanceStatus">physical_pending</span>
-            <span class="tag off" id="hardwareAcceptanceDeviceStatus">device=unknown</span>
+            <span class="tag warn" id="hardwareAcceptanceStatus">等待实体验收</span>
+            <span class="tag off" id="hardwareAcceptanceDeviceStatus">设备=未知</span>
           </div>
         </div>
         <div class="panel-body">
           <div class="actions">
-            <button class="secondary" id="refreshHardwareAcceptance">Refresh Acceptance</button>
+            <button class="secondary" id="refreshHardwareAcceptance">刷新验收</button>
           </div>
           <div class="status-strip">
-            <div class="metric"><span>Device</span><strong id="hardwareAcceptanceDevice">device=none</strong></div>
-            <div class="metric"><span>Connection</span><strong id="hardwareAcceptanceConnection">missing</strong></div>
-            <div class="metric"><span>Physical</span><strong id="hardwareAcceptancePhysical">physical_accepted=false</strong></div>
-            <div class="metric"><span>Next</span><strong id="hardwareAcceptanceNext">run_full_check</strong></div>
+            <div class="metric"><span>设备</span><strong id="hardwareAcceptanceDevice">设备=无</strong></div>
+            <div class="metric"><span>连接</span><strong id="hardwareAcceptanceConnection">缺失</strong></div>
+            <div class="metric"><span>实体验收</span><strong id="hardwareAcceptancePhysical">实体验收=否</strong></div>
+            <div class="metric"><span>下一步</span><strong id="hardwareAcceptanceNext">运行全量检查</strong></div>
           </div>
-          <div class="row-list" id="hardwareAcceptanceItems" aria-label="Hardware acceptance items"></div>
+          <div class="row-list" id="hardwareAcceptanceItems" aria-label="硬件验收项"></div>
         </div>
       </section>
     </main>
@@ -905,8 +905,326 @@ const workspaceConsoleHTML = `<!doctype html>
       eventLog: document.getElementById('eventLog'),
       serviceStatus: document.getElementById('serviceStatus')
     };
+    const zhTerms = [
+      ['Cascade ASR -> LLM -> TTS', '级联：语音识别 -> 大模型 -> 语音合成'],
+      ['Realtime voice', '实时语音'],
+      ['A21 desk workmate', '紫悦桌面伙伴'],
+      ['Wry peer', '有梗同伴'],
+      ['Calm anchor', '稳定锚点'],
+      ['Desk mouthpiece', '桌面嘴替'],
+      ['Boss challenge', '老板挑战'],
+      ['Engineer pushback', '工程反推'],
+      ['User complaint', '用户投诉'],
+      ['Pre-meeting', '会前'],
+      ['Post-meeting', '会后'],
+      ['Late-night radio', '深夜电台'],
+      ['A21 natural voice', '紫悦自然声音'],
+      ['A21 cloned voice', '紫悦克隆声音'],
+      ['CosyVoice clone', 'CosyVoice 克隆'],
+      ['MiniMax clone', 'MiniMax 克隆'],
+      ['Qwen ASR realtime', 'Qwen 实时语音识别'],
+      ['Doubao ASR realtime', '豆包实时语音识别'],
+      ['Sherpa streaming local', 'Sherpa 本地流式识别'],
+      ['StepFun 8k fast', 'StepFun 8k 快速'],
+      ['DashScope Qwen flash', 'DashScope Qwen 快速'],
+      ['SiliconFlow Qwen', 'SiliconFlow Qwen'],
+      ['DeepSeek fallback', 'DeepSeek 降级'],
+      ['Local Ollama', '本地 Ollama'],
+      ['Doubao speech-to-speech realtime', '豆包端到端实时语音'],
+      ['OpenAI realtime', 'OpenAI 实时'],
+      ['Doubao realtime TTS bridge', '豆包实时 TTS 桥'],
+      ['Qwen Omni realtime', 'Qwen Omni 实时'],
+      ['Mode ritual', '模式仪式'],
+      ['Full check', '全量检查'],
+      ['Power lifecycle', '电源生命周期'],
+      ['run_mode_ritual', '运行模式仪式'],
+      ['verify_no_cable_power_button_boot', '验证无插线电源键启动'],
+      ['a21.v21_adapter_query.v2', 'V21 适配器契约 v2'],
+      ['available', '可用'],
+      ['planned', '计划中'],
+      ['recommended', '推荐'],
+      ['fallback', '降级'],
+      ['mac_local', 'Mac 本地'],
+      ['default', '默认'],
+      ['opt_in', '需主动选择'],
+      ['connected device', '连接设备'],
+      ['device bindings', '设备绑定'],
+      ['device bind', '设备绑定'],
+      ['device revoke', '撤销设备'],
+      ['No sources', '暂无来源'],
+      ['stored_local intake empty', '本地存储入口为空'],
+      ['no_execute', '不执行'],
+      ['No read records', '暂无读取记录'],
+      ['professional route idle', '专业路径空闲'],
+      ['v21 off', 'V21 关闭'],
+      ['No trace markers', '暂无追踪标记'],
+      ['No body trace markers', '暂无机身追踪标记'],
+      ['No scene trace markers', '暂无场景追踪标记'],
+      ['No screen trace markers', '暂无屏幕追踪标记'],
+      ['No official action trace markers', '暂无官方动作追踪标记'],
+      ['No probe read records', '暂无探针读取记录'],
+      ['No acceptance items', '暂无验收项'],
+      ['device_missing', '设备缺失'],
+      ['probe idle', '探针空闲'],
+      ['preset idle', '姿态空闲'],
+      ['scene idle', '场景空闲'],
+      ['screen idle', '屏幕空闲'],
+      ['official action idle', '官方动作空闲'],
+      ['device missing', '设备缺失'],
+      ['not_delivered', '未送达'],
+      ['delivered', '已送达'],
+      ['disconnected', '未连接'],
+      ['connected', '已连接'],
+      ['blocked', '已阻止'],
+      ['status', '状态'],
+      ['workspace ', '工作台 '],
+      ['scope ', '范围 '],
+      ['sources ', '来源 '],
+      ['reads ', '读取 '],
+      ['filtered', '已筛选'],
+      ['upload ', '上传 '],
+      ['index ', '索引 '],
+      ['delete ', '删除 '],
+      ['document file missing', '缺少文档文件'],
+      ['stored document missing', '缺少已存文档'],
+      ['delete source missing', '缺少可删除来源'],
+      ['device bound', '设备已绑定'],
+      ['device revoked', '设备已撤销'],
+      ['roleplay ', '陪伴模式 '],
+      ['voice chain ', '语音链路 '],
+      ['mode ritual physical', '模式仪式实体验收'],
+      ['mode ritual ', '模式仪式 '],
+      ['wake word ', '唤醒词 '],
+      ['probe roleplay', '陪伴探针'],
+      ['probe professional', '专业探针'],
+      ['probe trace', '探针追踪'],
+      ['body preset', '机身预设'],
+      ['body motion', '机身动作'],
+      ['body trace', '机身追踪'],
+      ['hardware scene acceptance', '硬件场景验收'],
+      ['hardware scene trace', '硬件场景追踪'],
+      ['hardware scene', '硬件场景'],
+      ['hardware acceptance', '硬件验收'],
+      ['screen brightness', '屏幕亮度'],
+      ['screen theme', '屏幕主题'],
+      ['screen info', '屏幕信息'],
+      ['screen trace', '屏幕追踪'],
+      ['screen ', '屏幕 '],
+      ['device status', '设备状态'],
+      ['mcp capabilities', 'MCP 能力'],
+      ['official relay status', '官方中继状态'],
+      ['official relay', '官方中继'],
+      ['official action fallback', '官方动作降级'],
+      ['official action trace', '官方动作追踪'],
+      ['official action', '官方动作'],
+      ['after ', '原因 '],
+      ['saved', '已保存'],
+      ['loaded', '已加载'],
+      ['recorded', '已记录'],
+      ['ok', '正常'],
+      ['mode ritual', '模式仪式'],
+      ['workspace console ready', '工作台控制台已就绪'],
+      ['gateway contract ready', '网关契约就绪'],
+      ['gateway unavailable', '网关不可用'],
+      ['gateway contract', '网关契约'],
+      ['contract_ready', '契约就绪'],
+      ['stored_local pending', '本地已存，待索引'],
+      ['stored_local_pending_index', '本地已存，待索引'],
+      ['metadata_only', '仅元数据'],
+      ['not_started_no_execute', '未开始，不执行'],
+      ['indexing_requested_no_execute', '已请求索引，不执行'],
+      ['deleted_metadata_only', '已删除，仅保留元数据'],
+      ['deleted_no_execute', '已删除，不执行'],
+      ['binding_not_configured', '尚未配置绑定'],
+      ['open_until_binding_configured', '未配置前开放'],
+      ['workspace_access_status', '工作台访问状态'],
+      ['device_binding_policy', '设备绑定策略'],
+      ['prompt_input_ready', '提示输入就绪'],
+      ['physical_accepted', '实体验收'],
+      ['hot_switch', '热切换'],
+      ['stepfun_not_selected', 'StepFun 未选择'],
+      ['build_required', '需要构建'],
+      ['runtime_hot_swap', '运行时热切换'],
+      ['route=', '路径='],
+      ['trace=', '追踪='],
+      ['events=', '事件='],
+      ['device=', '设备='],
+      ['preset=', '姿态='],
+      ['motion=', '动作='],
+      ['scene=', '场景='],
+      ['screen=', '屏幕='],
+      ['theme:', '主题:'],
+      ['brightness:', '亮度:'],
+      ['brightness=', '亮度='],
+      ['body=', '机身='],
+      ['rgb:', 'RGB:'],
+      ['pitch:', '俯仰:'],
+      ['yaw:', '偏航:'],
+      ['speed:', '速度:'],
+      ['pose=', '姿态='],
+      ['steps=', '步数='],
+      ['ritual=', '仪式='],
+      ['action=', '动作='],
+      ['relay=', '中继='],
+      ['event=', '事件='],
+      ['packets=', '数据包='],
+      ['surfaces=', '硬件面='],
+      ['connected=', '连接='],
+      ['next=', '下一步='],
+      ['tool=', '工具='],
+      ['mcp=', 'MCP='],
+      ['allowed=', '允许='],
+      ['blocked=', '阻止='],
+      ['offset_ms=', '偏移毫秒='],
+      ['searchable=', '可检索='],
+      ['fallback=', '降级='],
+      ['professional_query', '专业查询'],
+      ['fast_companion_hybrid', '快速陪伴混合链路'],
+      ['local_audio', '本地音频'],
+      ['fallback_delivered', '降级已送达'],
+      ['operator_visible_accepted', '操作员已确认可见'],
+      ['operator_pending', '等待操作员确认'],
+      ['physical_pending', '等待实体验收'],
+      ['machine_evidence_pending', '等待机器证据'],
+      ['run_full_check', '运行全量检查'],
+      ['connect_official_stackchan_ws', '连接官方 StackChan WebSocket'],
+      ['xiaozhi_mcp_sequence', '小智 MCP 序列'],
+      ['stackchan_official_ws', 'StackChan 官方 WebSocket'],
+      ['active_builtin_model', '内置模型生效'],
+      ['builtin_active', '内置生效'],
+      ['builtin_xiaozhi', '内置小智'],
+      ['custom_multinet', '自定义 MultiNet'],
+      ['public_only', '仅公共'],
+      ['personal_only', '仅个人'],
+      ['personal_plus_public', '个人 + 公共'],
+      ['roleplay', '陪伴模式'],
+      ['professional', '专业模式'],
+      ['ready', '准备'],
+      ['listening', '聆听中'],
+      ['thinking', '思考中'],
+      ['speaking', '说话中'],
+      ['celebrate', '庆祝'],
+      ['reset_idle', '复位待机'],
+      ['look_up', '抬头'],
+      ['nod', '点头'],
+      ['shake', '摇头'],
+      ['dance', '跳舞'],
+      ['stop', '停止'],
+      ['full_check', '全量检查'],
+      ['showtime', '展示'],
+      ['focus', '专注'],
+      ['reset', '复位'],
+      ['light', '浅色'],
+      ['dark', '深色'],
+      ['auto', '自动'],
+      ['idle', '空闲'],
+      ['none', '无'],
+      ['unknown', '未知'],
+      ['missing', '缺失'],
+      ['online', '在线'],
+      ['offline', '离线'],
+      ['bound', '已绑定'],
+      ['revoked', '已撤销'],
+      ['deleted', '已删除'],
+      ['completed', '已完成'],
+      ['started', '已开始'],
+      ['pending', '等待中'],
+      ['sent', '已发送'],
+      ['accepted', '已接受'],
+      ['empty', '空'],
+      ['true', '是'],
+      ['false', '否'],
+      ['PRO / checking', '专业 / 检查中'],
+      ['no_send_plan_only', '仅计划，不发送']
+    ];
+    function escapeRegExp(value) {
+      return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    function cnValue(value) {
+      if (value == null || value === '') return '无';
+      let text = String(value);
+      zhTerms.forEach(([from, to]) => {
+        if (/^[A-Za-z0-9_]+$/.test(from)) {
+          const pattern = new RegExp('(^|[^A-Za-z0-9_])' + escapeRegExp(from) + '(?=$|[^A-Za-z0-9_])', 'g');
+          text = text.replace(pattern, '$1' + to);
+        } else {
+          text = text.split(from).join(to);
+        }
+      });
+      return text;
+    }
+    function translateStaticStatusText() {
+      [
+        ui.serviceStatus,
+        ui.storageStatus,
+        ui.indexStatus,
+        ui.searchableStatus,
+        ui.deviceBindingStatus,
+        ui.workspaceStatus,
+        ui.roleplayPromptStatus,
+        ui.roleplayPhysicalStatus,
+        ui.roleplayMemoryStatus,
+        ui.voiceChainHotSwitchStatus,
+        ui.voiceChainFindingStatus,
+        ui.wakeWordBuildStatus,
+        ui.wakeWordHotSwapStatus,
+        ui.wakeWordRuntimeStatus,
+        ui.wakeWordFirmwareStatus,
+        ui.wakeWordCodeStatus,
+        ui.voiceProbeRouteStatus,
+        ui.voiceProbeTraceStatus,
+        ui.voiceProbeRoleplayStatus,
+        ui.voiceProbeVoiceStatus,
+        ui.voiceProbeMemoryStatus,
+        ui.voiceProbeProfessionalStatus,
+        ui.bodyPresetStatus,
+        ui.bodyPresetPhysicalStatus,
+        ui.bodyPresetTraceStatus,
+        ui.bodyPresetLEDStatus,
+        ui.bodyPresetHeadStatus,
+        ui.hardwareSceneStatus,
+        ui.hardwareScenePhysicalStatus,
+        ui.hardwareSceneTraceStatus,
+        ui.hardwareSceneScreenStatus,
+        ui.hardwareSceneBodyStatus,
+        ui.hardwareSceneStepStatus,
+        ui.hardwareSceneAcceptanceStatus,
+        ui.hardwareScreenStatus,
+        ui.hardwareScreenPhysicalStatus,
+        ui.hardwareScreenTraceStatus,
+        ui.screenBrightnessStatus,
+        ui.screenThemeStatus,
+        ui.screenToolStatus,
+        ui.mcpCapabilitiesStatus,
+        ui.officialActionStatus,
+        ui.officialRelayStatus,
+        ui.officialActionPhysicalStatus,
+        ui.officialActionTraceStatus,
+        ui.officialActionEventStatus,
+        ui.officialActionPacketStatus,
+        ui.officialActionSurfaceStatus,
+        ui.officialRelaySocketStatus,
+        ui.officialRelayNextStatus,
+        ui.roleplayExpression,
+        ui.professionalCue,
+        ui.modeRitualStatus,
+        ui.modeRitualTraceStatus,
+        ui.modeRitualPhysicalStatus,
+        ui.hardwareAcceptanceStatus,
+        ui.hardwareAcceptanceDeviceStatus,
+        ui.hardwareAcceptanceDevice,
+        ui.hardwareAcceptanceConnection,
+        ui.hardwareAcceptancePhysical,
+        ui.hardwareAcceptanceNext
+      ].forEach((el) => {
+        if (el) el.textContent = cnValue(el.textContent);
+      });
+      document.querySelectorAll('.tagline .tag').forEach((el) => {
+        el.textContent = cnValue(el.textContent);
+      });
+    }
     function log(message) {
-      const line = new Date().toLocaleTimeString() + '  ' + message;
+      const line = new Date().toLocaleTimeString() + '  ' + cnValue(message);
       ui.eventLog.textContent = (ui.eventLog.textContent ? ui.eventLog.textContent + '\n' : '') + line;
       ui.eventLog.scrollTop = ui.eventLog.scrollHeight;
     }
@@ -937,7 +1255,7 @@ const workspaceConsoleHTML = `<!doctype html>
       });
     }
     function setText(el, value) {
-      el.textContent = value == null || value === '' ? 'none' : String(value);
+      el.textContent = cnValue(value == null || value === '' ? 'none' : String(value));
     }
     function sourceScopeForQueryScope(scope) {
       return scope === 'public_only' ? 'public' : 'personal';
@@ -986,7 +1304,7 @@ const workspaceConsoleHTML = `<!doctype html>
       if (active && active.device_id) ui.deviceId.value = active.device_id;
     }
     function optionLabel(option) {
-      return (option.label || option.id || 'none') + (option.status ? ' [' + option.status + ']' : '');
+      return cnValue((option.label || option.id || 'none') + (option.status ? ' [' + option.status + ']' : ''));
     }
     function setSelectOptions(select, options, selected) {
       const current = selected || select.value;
@@ -1015,10 +1333,10 @@ const workspaceConsoleHTML = `<!doctype html>
       sub.className = 'row-sub';
       tag.className = 'tag ' + (tone || '');
       subRight.className = 'row-sub';
-      strong.textContent = title || 'none';
-      sub.textContent = left || 'none';
-      tag.textContent = right || 'unknown';
-      subRight.textContent = detail || 'searchable=false';
+      strong.textContent = cnValue(title || 'none');
+      sub.textContent = cnValue(left || 'none');
+      tag.textContent = cnValue(right || 'unknown');
+      subRight.textContent = cnValue(detail || 'searchable=false');
       a.append(strong, sub);
       b.append(tag, subRight);
       item.append(a, b);
@@ -1433,10 +1751,10 @@ const workspaceConsoleHTML = `<!doctype html>
     }
     async function acceptHardwareScenePhysical() {
       if (!state.hardwareScene || !state.hardwareScene.trace_id || !state.hardwareScene.session_id) {
-        throw new Error('run Full Check first');
+        throw new Error('请先运行全量检查');
       }
       if ((state.hardwareScene.scene || '') !== 'full_check') {
-        throw new Error('run Full Check first');
+        throw new Error('请先运行全量检查');
       }
       const payload = await postJSON('/v1/xiaozhi/body-scene-acceptance', {
         device_id: currentDeviceID(),
@@ -2103,7 +2421,7 @@ const workspaceConsoleHTML = `<!doctype html>
     }
     async function acceptModeRitualPhysical() {
       if (!state.modeRitual || !state.modeRitual.trace_id || !state.modeRitual.session_id) {
-        throw new Error('run mode ritual first');
+        throw new Error('请先运行模式仪式');
       }
       const mode = state.modeRitual.selected_voice_mode || 'roleplay';
       const payload = await postJSON('/v1/voice-mode-ritual-acceptance', {
@@ -2456,11 +2774,12 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.refreshOfficialActionTrace.addEventListener('click', () => refreshOfficialActionTrace().catch((err) => log('official action trace ' + err.message)));
     ui.voiceProbeModeSelect.addEventListener('change', () => {
       if (ui.voiceProbeModeSelect.value === 'professional') {
-        ui.voiceProbeInput.placeholder = 'safe evidence cue';
+        ui.voiceProbeInput.placeholder = '安全证据提示';
       } else {
-        ui.voiceProbeInput.placeholder = 'safe short cue';
+        ui.voiceProbeInput.placeholder = '安全短提示';
       }
     });
+    translateStaticStatusText();
     boot();
   </script>
 </body>

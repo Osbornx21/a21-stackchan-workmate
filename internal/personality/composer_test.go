@@ -96,7 +96,7 @@ func TestPersonalityComposeRoleSoulAddsOnlySelectedSoul(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"Role Soul: Calm Anchor",
-		"Role Soul: A21 Desk Workmate",
+		"Role Soul: 紫悦 Desk Workmate",
 		"Boss Challenge Playbook",
 	} {
 		if strings.Contains(prompt, forbidden) {

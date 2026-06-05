@@ -3103,7 +3103,7 @@ func roleplayProfileOptions(selected string) []RoleplayProfileOption {
 	options := []RoleplayProfileOption{
 		{
 			ID:             DefaultRoleplayProfile,
-			Label:          "A21 desk workmate",
+			Label:          "紫悦桌面伙伴",
 			Status:         "available",
 			Description:    "close desk workmate that listens first and turns pressure into usable words",
 			VoiceHint:      "natural_short_warm",
@@ -5610,8 +5610,8 @@ func voiceChainRealtimeProviderOptions(selected string) []VoiceChainProfileOptio
 
 func voiceChainVoiceOptions(selected string) []VoiceChainVoiceOption {
 	return []VoiceChainVoiceOption{
-		{ID: "a21_voice_default_dashscope", Label: "A21 natural voice", Status: "default", ProviderProfile: "a21_bailian_qwen_tts_realtime", TTSProfile: "dashscope_qwen_tts_realtime", Default: selected == "a21_voice_default_dashscope"},
-		{ID: "a21_voice_clone_default", Label: "A21 cloned voice", Status: "available", ProviderProfile: "voice_clone_cli", TTSProfile: "voice_clone_cli", VoiceClone: true, Default: selected == "a21_voice_clone_default"},
+		{ID: "a21_voice_default_dashscope", Label: "紫悦自然声音", Status: "default", ProviderProfile: "a21_bailian_qwen_tts_realtime", TTSProfile: "dashscope_qwen_tts_realtime", Default: selected == "a21_voice_default_dashscope"},
+		{ID: "a21_voice_clone_default", Label: "紫悦克隆声音", Status: "available", ProviderProfile: "voice_clone_cli", TTSProfile: "voice_clone_cli", VoiceClone: true, Default: selected == "a21_voice_clone_default"},
 		{ID: "a21_voice_clone_cosyvoice", Label: "CosyVoice clone", Status: "planned", ProviderProfile: "a21_bailian_cosyvoice_clone_tts", TTSProfile: "voice_clone_cli", VoiceClone: true, Default: selected == "a21_voice_clone_cosyvoice"},
 		{ID: "a21_voice_clone_minimax", Label: "MiniMax clone", Status: "planned", ProviderProfile: "a21_minimax_voice_clone_tts", TTSProfile: "voice_clone_cli", VoiceClone: true, Default: selected == "a21_voice_clone_minimax"},
 	}
@@ -5620,11 +5620,11 @@ func voiceChainVoiceOptions(selected string) []VoiceChainVoiceOption {
 func voiceChainTTSLabel(profile string) string {
 	switch profile {
 	case "dashscope_qwen_tts_realtime":
-		return "A21 natural voice"
+		return "紫悦自然声音"
 	case "doubao_tts_realtime":
 		return "Doubao realtime voice"
 	case "voice_clone_cli":
-		return "A21 cloned voice"
+		return "紫悦克隆声音"
 	default:
 		return profile
 	}
