@@ -3,6 +3,9 @@
 Status: active state document.
 Last updated: 2026-06-05.
 
+Active transition:
+`T-XIAOZHI-OFFICIAL-AUTO-LISTEN-STATE-PARITY-001`.
+
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
 are the project memory.
@@ -28,6 +31,22 @@ Latest foreground hardware-window update, 2026-06-05 16:34 CST:
   `r00=28,r01=14,r10=34,r12=00,r14=65,r20=04,r21=20,r22=06,r23=3f,r24=00,r26=08,r27=00,r30=3f,r61=05,r62=0d,r63=15,r64=03,r80=05,r82=12,r90=3f,r91=00,r92=0d,r94=1c,r95=1c,r97=1c,r99=18,a4=64,a5=00`.
 - Current device state is restored A21 product candidate, not stock baseline.
   No-USB PWRKEY and AI.AGENT voice/body UX need foreground physical evidence.
+
+Latest Gateway state-machine update, 2026-06-05 16:50 CST:
+
+- Official Xiaozhi reference comparison found that normal server `tts.stop`
+  after a completed answer intentionally drives the device back to
+  `kDeviceStateListening` unless the device is in manual-stop mode.
+- In the official `Listening` state, the device waits for playback drain in
+  auto mode, then sends `listen.start` and enables voice processing; the
+  Gateway must not suppress that normal auto-listen restart.
+- The current Gateway candidate removes post-`tts.stop` input suppression for
+  normal completed answers and keeps suppression only for non-normal local
+  fallback, placeholder, host-say, degraded, error, or unavailable paths.
+- The candidate also prevents an already-stopped turn from being classified as
+  a new barge-in when the official device immediately re-enters listening.
+- Focused Gateway tests and broad Xiaozhi/official StackChan tests passed
+  before this state update; deployment to ECS is the next action.
 
 Latest foreground hardware-window update, 2026-06-05 16:11 CST:
 

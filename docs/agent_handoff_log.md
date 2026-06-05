@@ -20374,6 +20374,73 @@ Forbidden actions avoided:
   product flash lane, no Git prune/gc, and no rollback of internal-test3
   voice/protocol changes.
 
+## 2026-06-05 16:50 CST - Xiaozhi Official Auto-Listen State Parity Candidate
+
+Round goal:
+
+- Stop the voice-loop/cadence regression by comparing A21 Gateway behavior
+  against the mature official Xiaozhi device state machine instead of adding
+  another speculative drain/cooldown patch.
+
+Actual completed work:
+
+- Read the official Xiaozhi `Application::OnIncomingJson`,
+  `HandleStartListeningEvent`, and `HandleStateChangedEvent` paths from the
+  clean stock source tree.
+- Confirmed official behavior: normal `tts.stop` after a completed answer
+  returns the device to `Listening` unless manual-stop mode is active; in
+  `Listening`, the device drains playback in auto mode, sends `listen.start`,
+  and then enables voice processing.
+- Updated Gateway candidate behavior so normal completed-answer `tts.stop`
+  does not arm post-TTS input suppression.
+- Kept post-TTS suppression only for non-normal paths: local fallback,
+  placeholder/no-speech, host-say, degraded, error, or unavailable responses.
+- Prevented an already-stopped turn from being misclassified as barge-in when
+  the official device immediately restarts listening.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused Gateway state-machine tests passed:
+  `Xiaozhi(WebSocketStockPhysicalAcceptsOfficialAutoListenAfterAnswer|SaySuppressesImmediateListenRestartForStockPhysical|WebSocketNoSpeechPlaceholderSuppressesImmediateListenRestartForStockPhysical|WebSocketListenStartBargeInStopsActiveTTS|ProductPlaybackEventsAllowanceRecordsPlaybackStart|SessionRecentDownlinkCanBeInterruptedAfterTurnCompletion|SessionRecentDownlinkAfterPlaybackStopDoneIsNotBargeIn)`.
+- Broader Gateway Xiaozhi/official/body/touch/barge suite passed:
+  `Xiaozhi|OfficialStackChan|ProductPlayback|Touch|Barge|SessionRecentDownlink`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+
+Runtime or physical evidence:
+
+- Not deployed yet in this entry. Next action is commit, push, ECS deploy, and
+  runtime `/healthz` plus device/official relay status polling.
+
+Known risks/blockers:
+
+- This Gateway fix addresses the server-side state-machine mismatch that can
+  suppress official auto-listen after a normal answer. It does not by itself
+  solve no-USB PWRKEY cold boot or firmware wake-word sensitivity.
+- Firmware-side Xiaozhi parity still needs a separate comparison for
+  `HandleStartListeningEvent`, wake-word configuration, playback/AEC timing,
+  and local body reaction semantics.
+
+Recommended next action:
+
+- Commit and deploy this Gateway fix first so physical voice validation uses
+  the official-compatible auto-listen state machine. Then continue with the
+  firmware-side official parity pass for wake sensitivity, touch/body/RGB, and
+  power lifecycle.
+
+Forbidden actions avoided:
+
+- No firmware flash, no PMIC write, no NVS write, no provider key in firmware,
+  no generic product flash lane, no Git prune/gc, and no rollback of
+  internal-test3 protocol changes.
+
 ## 2026-06-05 11:12 CST - Voice Loop Touch Feedback And PMIC Power-Key Recovery Flashed
 
 Round goal:

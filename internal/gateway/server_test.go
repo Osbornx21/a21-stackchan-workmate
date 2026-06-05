@@ -9129,12 +9129,10 @@ func TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical(t *testing.T
 	}
 }
 
-func TestXiaozhiWebSocketStockPhysicalDrainsImmediatePostAnswerListenStop(t *testing.T) {
-	streamingASR := newBlockingCommitStreamingASRAdapter()
-	defer streamingASR.releaseCommit()
+func TestXiaozhiWebSocketStockPhysicalAcceptsOfficialAutoListenAfterAnswer(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{
 		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
-			ASR:        streamingASR,
+			ASR:        reusableStreamingASRAdapter{name: "mock-streaming-asr"},
 			TextStream: singleSentenceTextStreamAdapter{},
 			TTS:        segmentChunkTTSAdapter{},
 			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
@@ -9164,21 +9162,10 @@ func TestXiaozhiWebSocketStockPhysicalDrainsImmediatePostAnswerListenStop(t *tes
 	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-streamingASR.appended:
-	case <-time.After(time.Second):
-		t.Fatal("streaming ASR did not receive the product speech frame")
-	}
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-streamingASR.commitEntered:
-	case <-time.After(time.Second):
-		t.Fatal("streaming ASR commit did not start")
-	}
-	streamingASR.releaseCommit()
-	assertXiaozhiProductAnswerSequence(t, ctx, conn)
+	assertXiaozhiProductAnswerAudioUntilStop(t, ctx, conn)
 
 	beforeDrain := traceEventCount(server.traceEvents("a21-trace-xiaozhi-product-post-answer-drain"), "xiaozhi.voice_pipeline.start")
 	beforeDownlink := traceEventCount(server.traceEvents("a21-trace-xiaozhi-product-post-answer-drain"), "xiaozhi.tts.opus_frame.downlink")
@@ -9211,29 +9198,33 @@ func TestXiaozhiWebSocketStockPhysicalDrainsImmediatePostAnswerListenStop(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
-	assertNoXiaozhiWebSocketMessage(t, conn, 150*time.Millisecond)
+	assertXiaozhiProductAnswerAudioUntilStop(t, ctx, conn)
 
 	traces := server.traceEvents("a21-trace-xiaozhi-product-post-answer-drain")
 	for _, want := range []string{
-		"xiaozhi.tts.stop.input_suppression_armed",
+		"xiaozhi.listen.start",
+		"xiaozhi.opus_frame.received",
+		"audio.ingress.buffered",
+		"xiaozhi.voice_pipeline.start",
+	} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace missing %q after official auto-listen restart: %+v", want, traces)
+		}
+	}
+	if got := traceEventCount(traces, "xiaozhi.voice_pipeline.start"); got != beforeDrain+1 {
+		t.Fatalf("voice pipeline start count = %d, want %d after official auto-listen restart", got, beforeDrain+1)
+	}
+	if got := traceEventCount(traces, "xiaozhi.tts.opus_frame.downlink"); got != beforeDownlink+2 {
+		t.Fatalf("downlink count = %d, want %d after official auto-listen restart", got, beforeDownlink+2)
+	}
+	for _, forbidden := range []string{
 		"xiaozhi.listen.start.input_suppressed",
 		"xiaozhi.listen.start.suppressed_post_tts_drain",
 		"xiaozhi.opus_frame.ignored_suppressed_listen",
-		"xiaozhi.listen.stop.suppressed_session_ended",
-		"xiaozhi.listen.stop.suppressed_session_drain_armed",
 	} {
-		if !traceContains(traces, want) {
-			t.Fatalf("trace missing %q after suppressed post-answer drain: %+v", want, traces)
+		if traceContains(traces, forbidden) {
+			t.Fatalf("trace unexpectedly contains %q after official auto-listen restart: %+v", forbidden, traces)
 		}
-	}
-	if got := traceEventCount(traces, "xiaozhi.voice_pipeline.start"); got != beforeDrain {
-		t.Fatalf("voice pipeline start count = %d, want unchanged %d after suppressed drain", got, beforeDrain)
-	}
-	if got := traceEventCount(traces, "xiaozhi.tts.opus_frame.downlink"); got != beforeDownlink {
-		t.Fatalf("downlink count = %d, want unchanged %d after suppressed drain", got, beforeDownlink)
-	}
-	if traceContains(traces, "xiaozhi.wake_preroll.opus_frame.buffered") {
-		t.Fatalf("suppressed post-answer tail audio entered wake preroll: %+v", traces)
 	}
 }
 
@@ -16072,6 +16063,25 @@ type blockingCommitStreamingASRAdapter struct {
 	transcribe    chan struct{}
 }
 
+type reusableStreamingASRAdapter struct {
+	name string
+}
+
+func (a reusableStreamingASRAdapter) Name() string {
+	if strings.TrimSpace(a.name) == "" {
+		return "mock-streaming-asr"
+	}
+	return a.name
+}
+
+func (a reusableStreamingASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	return providers.NewMockASRAdapter(a.Name()).Transcribe(ctx, req)
+}
+
+func (a reusableStreamingASRAdapter) StartStreamingASR(ctx context.Context, req providers.StreamingASRStartRequest) (providers.StreamingASRSession, error) {
+	return providers.NewMockStreamingASRAdapter(a.Name()).StartStreamingASR(ctx, req)
+}
+
 func newBlockingCommitStreamingASRAdapter() *blockingCommitStreamingASRAdapter {
 	return &blockingCommitStreamingASRAdapter{
 		events:        make(chan providers.ASRAdapterEvent, 2),
@@ -17045,6 +17055,42 @@ func assertXiaozhiProductAnswerSequence(t *testing.T, ctx context.Context, conn 
 			}
 		}
 	}
+}
+
+func assertXiaozhiProductAnswerAudioUntilStop(t *testing.T, ctx context.Context, conn *websocket.Conn) {
+	t.Helper()
+	seenStart := false
+	seenAnswerSentence := false
+	binaryFrames := 0
+	for i := 0; i < 12; i++ {
+		frame := readXiaozhiFrame(t, ctx, conn)
+		if frame.messageType == websocket.MessageBinary {
+			if frame.byteCount == 0 {
+				t.Fatalf("frame %d = %s, want non-empty binary Opus", i, xiaozhiFrameSummary(frame))
+			}
+			binaryFrames++
+			continue
+		}
+		if frame.messageType != websocket.MessageText {
+			t.Fatalf("frame %d = %s, want JSON or binary Opus", i, xiaozhiFrameSummary(frame))
+		}
+		kind, _ := frame.json["type"].(string)
+		state, _ := frame.json["state"].(string)
+		phase, _ := frame.json["phase"].(string)
+		if kind == "tts" && state == "start" {
+			seenStart = true
+		}
+		if kind == "tts" && state == "sentence_start" && phase == "answer" {
+			seenAnswerSentence = true
+		}
+		if kind == "tts" && state == "stop" {
+			if !seenStart || !seenAnswerSentence || binaryFrames < 2 {
+				t.Fatalf("answer before stop incomplete: seen_start=%v seen_answer=%v binary_frames=%d", seenStart, seenAnswerSentence, binaryFrames)
+			}
+			return
+		}
+	}
+	t.Fatalf("answer did not reach tts stop: seen_start=%v seen_answer=%v binary_frames=%d", seenStart, seenAnswerSentence, binaryFrames)
 }
 
 func xiaozhiFrameSummary(frame xiaozhiObservedFrame) string {

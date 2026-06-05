@@ -8089,6 +8089,11 @@ func (session *xiaozhiSession) cancelCurrentXiaozhiTurnLocked(reason string) *xi
 
 func (session *xiaozhiSession) prepareXiaozhiListenStartBargeIn(reason string, nowMS int64, recentWindowMS int64) (xiaozhiTurnTask, bool) {
 	session.mu.Lock()
+	if session.ttsStopSent {
+		session.currentTurn = nil
+		session.mu.Unlock()
+		return xiaozhiTurnTask{}, false
+	}
 	turn := session.cancelCurrentXiaozhiTurnLocked(reason)
 	turnID := xiaozhiTurnID(turn)
 	if turnID == "" && session.lastDownlinkTurnID != "" && nowMS-session.lastDownlinkAtMS >= 0 && nowMS-session.lastDownlinkAtMS <= recentWindowMS {
@@ -11558,10 +11563,12 @@ func xiaozhiShouldSuppressInputAfterTTSStop(reason string) bool {
 	if strings.Contains(reason, "abort") || strings.Contains(reason, "barge") || strings.Contains(reason, "wake") {
 		return false
 	}
-	return strings.Contains(reason, "completed") ||
-		strings.Contains(reason, "local_fallback") ||
+	return strings.Contains(reason, "local_fallback") ||
 		strings.Contains(reason, "placeholder") ||
-		strings.Contains(reason, "host_say_complete")
+		strings.Contains(reason, "host_say_complete") ||
+		strings.Contains(reason, "degraded") ||
+		strings.Contains(reason, "error") ||
+		strings.Contains(reason, "unavailable")
 }
 
 func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, chunk providers.VoiceAudioChunk) (bool, error) {
