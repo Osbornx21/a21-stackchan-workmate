@@ -19,6 +19,58 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-06 01:15 CST - Atomic Feature Review Ledger Added
+
+Round goal:
+
+- Convert the recovered A21 mainline, PRD, state machine, handoff log, current
+  code routes, and internal test 4 floor into an atomic feature/progress ledger.
+
+Actual completed work:
+
+- Added `docs/engineering/A21_ATOMIC_FEATURE_REVIEW_20260606.md`.
+- Classified A21 atomic capabilities across governance, firmware/product lane,
+  Gateway/protocol, voice/provider, roleplay, professional workspace,
+  body/hardware parity, release/deployment, and repository hygiene.
+- Identified stale first-read control text in
+  `docs/engineering/A21_CURRENT_CONTROL.md` as a follow-up documentation risk.
+- Reconfirmed current mainline fact: recovered `main`/`origin/main` is at
+  `47129dc`, with internal test 4 as the protected floor.
+
+Changed files:
+
+- `docs/engineering/A21_ATOMIC_FEATURE_REVIEW_20260606.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Refresh stale first-read control docs after the ledger is accepted.
+- P0 no-USB power evidence, voice-loop trace capture, body parity matrix, and
+  provisioning/mobile app RCA remain open.
+- Side-branch unique-commit inventory remains needed before cherry-pick or
+  deletion decisions.
+
+Known risks/blockers:
+
+- Internal test 4 is a usable fallback floor but not full PRD acceptance.
+- Some older docs still describe pre-recovery hardware-window state or earlier
+  firmware lifecycle assumptions.
+
+Recommended next action:
+
+- Start `T-A21-CONTROL-DOC-REFRESH-001`, then resume the P0 stabilization
+  order: power evidence, voice trace, body parity, provisioning RCA.
+
+Tests/build/runtime results:
+
+- `go test ./...` passed before writing this handoff entry.
+- `make verify` passed after this documentation-only update.
+
+Forbidden actions avoided:
+
+- No code changes, no product flash, no NVS write, no provider switch, no ECS
+  deploy, no branch deletion, no Git prune/gc, and no cherry-pick.
+
 ## 2026-06-06 00:30 CST - Main Recovered To Internal Test 4 Floor
 
 Round goal:

@@ -1,7 +1,22 @@
 # A21 Project State Machine
 
 Status: active state document.
-Last updated: 2026-06-05.
+Last updated: 2026-06-06.
+
+Latest control-ledger update, 2026-06-06 01:15 CST:
+
+- Added `docs/engineering/A21_ATOMIC_FEATURE_REVIEW_20260606.md` as the
+  current atomic feature/progress ledger for the recovered mainline at
+  `47129dc`.
+- The ledger classifies product capabilities as `published_floor`,
+  `implemented`, `host_verified`, `deployed_or_flashed`, `physical_pending`,
+  `p0_regression`, `mock_or_planned`, or `stale_doc_risk`.
+- Current P0 gaps remain no-USB power-key boot, voice wake/latency/self-loop,
+  body parity regression, no-preloaded-Wi-Fi provisioning, and official app
+  device-data failure.
+- Next control candidate:
+  `T-A21-CONTROL-DOC-REFRESH-001`, followed by the active P0 stabilization
+  transitions.
 
 ## Stabilization Override
 
