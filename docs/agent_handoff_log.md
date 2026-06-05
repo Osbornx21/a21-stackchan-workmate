@@ -19,6 +19,58 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-06 00:30 CST - Main Recovered To Internal Test 4 Floor
+
+Round goal:
+
+- Stop the lean/partial `main` tree from acting as the A21 product mainline.
+
+Actual completed work:
+
+- Confirmed `main` at `4fa66c8` was an ancestor of internal test 4 but had
+  dropped major product files.
+- Created recovery branch
+  `codex/a21-mainline-recovery-internal-test4-20260606` from the verified
+  internal-test4 stabilization branch at `090eca6`.
+- Fast-forwarded `origin/main` from `4fa66c8` to `090eca6` without force push.
+- Fast-forwarded the local `main` ref to `origin/main`.
+- Added a short main recovery note.
+
+Changed files:
+
+- `docs/engineering/A21_MAIN_RECOVERY_20260606.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Later voice-clone/5080 optimizations still need selective cherry-pick review.
+- Public Gateway runtime health still needs a separate ECS recovery pass.
+
+Known risks/blockers:
+
+- Do not merge the old lean `main` tree or any side branch that deletes internal
+  test 4 product capabilities.
+- Do not cherry-pick voice-clone work until it is proven not to remove
+  DashScope realtime, official-compatible firmware, workspace console, or
+  product recovery surfaces.
+
+Recommended next action:
+
+- Continue from `origin/main` / `090eca6` and review candidate optimization
+  commits one by one against the internal test 4 capability floor.
+
+Tests/build/runtime results:
+
+- `GOMAXPROCS=2 go test ./...` passed on the recovery branch.
+- `make verify` passed on the recovery branch.
+- `origin/main` now differs from internal test 4 by only the stabilization
+  files and provider realtime test-fake concurrency fix.
+
+Forbidden actions avoided:
+
+- No force push, no branch deletion, no firmware flash, no NVS write, no
+  provider secret change, and no broad cherry-pick from the lean branch.
+
 ## 2026-06-05 19:20 CST - Internal Test 4 Stabilization Freeze Started
 
 Round goal:
