@@ -19,6 +19,63 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 15:33 CST - StackChan PMIC Boot Snapshot Flashed and Captured
+
+Round goal:
+
+- Recover from the first interrupted flash attempt and capture the boot-time
+  PMIC snapshot evidence from the new diagnostic firmware.
+
+Actual completed work:
+
+- The first flash attempt at 15:31 failed during app write around 40% because
+  USB serial disconnected with `Device not configured`.
+- After the operator reconnected/unplugged/replugged the cable, the same
+  product artifact was reflashed successfully through the guarded
+  official-compatible product lane.
+- Captured USB serial boot logs after the successful flash. The firmware boots
+  through official Launcher and initializes PMIC, display, camera, touch, MCP,
+  head touch, IO expander, RTC, IMU, and servos.
+- Captured the new PMIC boot snapshot:
+  `r00=38,r01=35,r10=34,r12=00,r14=65,r20=04,r21=20,r22=06,r23=3f,r24=00,r26=08,r27=00,r30=3f,r61=05,r62=0d,r63=15,r64=03,r80=05,r82=12,r90=3f,r91=00,r92=0d,r94=1c,r95=1c,r97=1c,r99=18,a4=64,a5=00`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- Successful product flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-153312-1780644792918047000.json`.
+- Flashed app artifact:
+  `a21-stackchan-official-xiaozhi-compatible.bin`; SHA-256
+  `a99ac8b1311a122865136ff52f06160c659e2e89465361cefd26eacfc7322684`.
+- Control guard commit:
+  `4812f85bad8a`.
+- USB boot serial evidence includes
+  `A21 PMIC boot-after-init` and reaches official Launcher.
+- Public Gateway `/healthz` returned OK; `/v1/devices` remains stale until the
+  operator opens `AI.AGENT`.
+
+Remaining issues:
+
+- Physical no-USB cold boot acceptance is still pending.
+- The PMIC snapshot proves the PMIC sees a charging/external-power state and
+  `a4=64` battery level while USB is attached; it does not by itself prove the
+  detached battery cold-start path.
+
+Next suggested action:
+
+- Operator unplugs USB completely, waits for full power-off, then presses the
+  upper-left power key and reports whether the device reaches official Home.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin`, no provider key in firmware, no direct boot into
+  Xiaozhi, no official Home/Setup rewrite, no NVS write, no Git prune/gc, and
+  no rollback of internal-test3 voice/protocol changes.
+
 ## 2026-06-05 15:29 CST - StackChan PMIC Boot Snapshot Build Ready
 
 Round goal:
