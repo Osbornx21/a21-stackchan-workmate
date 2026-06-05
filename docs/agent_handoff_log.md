@@ -19,6 +19,74 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 15:56 CST - StackChan Power State Machine A/B RCA
+
+Round goal:
+
+- Stop speculative PMIC patching after the no-USB cold-boot symptom persisted,
+  and compare the current A21 product startup path against clean official
+  StackChan and same-source Xiaozhi AXP2101 board examples.
+
+Actual completed work:
+
+- Reverted the uncommitted `REG27=0x10` experiment before build/flash; no
+  unverified PMIC register change remains in the worktree.
+- Compared current generated A21 product source against official StackChan
+  `HEAD` from clean export. `main.cpp` is the same official lifecycle:
+  `HAL.init -> Mooncake Launcher/Home -> AI.AGENT request -> startXiaozhi`.
+- Compared PMIC/board init. The A21 product delta is now limited to PMIC
+  diagnostics plus `REG10/REG22/REG24` writes while keeping official
+  `REG27=0x00`; these writes happen after the ESP32 app is already running.
+- Compared same-source Xiaozhi AXP2101 boards. `m5stack-core-s3` does not use
+  the Kevin/Waveshare `REG27=0x10` profile, so copying that profile into
+  StackChan remains only a hypothesis.
+- Built a clean stock-official no-overlay baseline in isolated directories
+  without flashing:
+  `/tmp/a21-stackchan-official-stock-clean` and
+  `/tmp/a21-stackchan-official-stock-build`.
+- Recorded that stock official and A21 product share flash offsets but differ
+  in bootloader SHA, partition table SHA, app name/SHA, assets SHA/size, and
+  sdkconfig/product features.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-power-state-machine-ab-rca.md`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- `git diff --check` passed before the handoff/state update.
+- Stock-official no-overlay build passed:
+  `reports/a21-stackchan-official-baseline-20260605-155153-1780645913655503000.json`.
+- Stock-official app artifact:
+  `/tmp/a21-stackchan-official-stock-build/stack-chan.bin`, SHA-256
+  `a0cd9129b9e5f4718893d4fa672cb62e57088d5585057a1e4fa8ec835018135e`.
+- No stock-official or Xiaozhi firmware was flashed in this round.
+
+Remaining issues:
+
+- Physical no-USB cold boot remains unaccepted.
+- The first unresolved boundary is
+  `physical upper-left PWRKEY -> AXP2101 battery/PMIC rail hold -> ESP32 boot`.
+- A stock-official physical A/B would be decisive, but it would temporarily
+  replace the A21 product candidate and therefore needs explicit diagnostic
+  lane discipline before execution.
+
+Next suggested action:
+
+- Use the RCA plan to choose one of two controlled paths: a temporary
+  stock-official physical A/B followed by immediate A21 product restore, or a
+  single-variable A21 product-lane candidate with a recorded hypothesis. Do not
+  add another PMIC patch without this decision.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin`, no provider key in firmware, no direct boot into
+  Xiaozhi, no official Home/Setup rewrite, no NVS write, no Git prune/gc, no
+  stock firmware flash, and no rollback of internal-test3 voice/protocol
+  changes.
+
 ## 2026-06-05 15:33 CST - StackChan PMIC Boot Snapshot Flashed and Captured
 
 Round goal:
