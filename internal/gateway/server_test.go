@@ -156,6 +156,36 @@ func TestOfficialStackChanDeviceDataEndpointsMatchFirmwareParserShape(t *testing
 		t.Fatalf("info body = %+v", infoBody)
 	}
 
+	for _, tc := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "deviceId", path: "/stackChan/device/info?deviceId=441BF6E26A60", want: "441BF6E26A60"},
+		{name: "id", path: "/stackChan/device/info?id=441BF6E26A60", want: "441BF6E26A60"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("info alias status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			var body struct {
+				Code int `json:"code"`
+				Data struct {
+					DeviceID string `json:"device_id"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Code != 0 || body.Data.DeviceID != tc.want {
+				t.Fatalf("info alias body = %+v, want device_id %q", body, tc.want)
+			}
+		})
+	}
+
 	unbindReq := httptest.NewRequest(http.MethodPost, "/stackChan/device/unbind", nil)
 	unbindReq.Header.Set("Authorization", "hi-stack-chan")
 	unbindRec := httptest.NewRecorder()

@@ -5906,10 +5906,7 @@ func (s *Server) handleOfficialStackChanDeviceInfo(w http.ResponseWriter, r *htt
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
-	if deviceID == "" {
-		deviceID = defaultOfficialStackChanDeviceID
-	}
+	deviceID := officialStackChanDeviceID(r)
 	writeJSON(w, http.StatusOK, OfficialStackChanDeviceDataResponse{
 		Code:    0,
 		Message: "ok",
