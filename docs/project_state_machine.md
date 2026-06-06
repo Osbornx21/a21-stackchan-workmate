@@ -3,6 +3,96 @@
 Status: active state document.
 Last updated: 2026-06-06.
 
+Latest endpoint voice/RGB/touch repair update, 2026-06-06 15:24 CST:
+
+- Implemented the next endpoint product-feel repair slice in the
+  official-compatible Xiaozhi overlay after the operator reported four physical
+  symptoms: weak custom wake, especially first wake and post-TTS re-wake; RGB
+  conflict with listening/ASR green indication; slow screen touch/barge-in; and
+  missing post-TTS conversational breath.
+- Lowered the custom MultiNet wake threshold from `20` to `16` in the product
+  overlay to improve `紫悦` wake sensitivity without switching wake engines or
+  enabling the stock HiStackChan WakeNet model.
+- Added a product playback-events gated post-TTS breath timer:
+  normal completed `tts.stop` returns to Listening and arms a 4200 ms one-shot;
+  if VAD speech starts, the breath is cancelled and the follow-up turn can
+  proceed; if the user stays silent, the timer calls the normal stop-listening
+  path so the device returns to Idle and wake-word detection is restored.
+- Reordered touch/barge handlers so speaking-state screen/top barge-in sends
+  touch/abort and resets decoder before local body feedback. Idle screen tap now
+  uses a dedicated A21 touch-listening helper with the default listen mode
+  instead of the manual-stop handler.
+- Reduced touch RGB brightness and restored official LED ownership after local
+  body sequences when the device is Listening or Speaking, so A21 body feedback
+  does not keep overriding the listening/ASR LED state.
+- Verification passed: focused official overlay tests,
+  `GOMAXPROCS=2 make verify`, `git diff --check`, tail-whitespace scan, and
+  `make a21-stackchan-official-xiaozhi-compatible-build`.
+- Current unflashed product app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `67e29577ab8910b1c3377c414f0f1d493698bb9530d28cc871aae5cc04ee94b7`;
+  build report:
+  `reports/a21-stackchan-official-baseline-20260606-152341-1780730621001993000.json`.
+- No flash, NVS write, ECS deploy, provider execution, PMIC write, prune/gc, or
+  rollback occurred.
+
+Latest AI.AGENT native body-sequence update, 2026-06-06 15:08 CST:
+
+- Continued the active
+  `docs/plans/2026-06-06-stackchan-official-xiaozhi-natural-dialogue-repair.md`
+  plan and implemented `T-A21-XIAOZHI-NATIVE-BODY-SEQUENCE-001` locally.
+- Updated the official-compatible Xiaozhi overlay so AI.AGENT touch/body
+  feedback no longer depends on the official `AppAvatar` `/stackChan/ws` relay
+  after Mooncake teardown. It now provides local StackChan sequences in the
+  Xiaozhi runtime using neon RGB, `moveWithSpeed`, `goHome`, and the existing
+  vibration sound.
+- Added named sequence coverage for attention, listening, thinking, speaking,
+  screen tap, top tap, top swipe forward/backward, and barge-in. Current
+  product wiring uses those sequences for screen/top touch and barge-in; state
+  lifecycle hooks remain a separate follow-up so voice timing is not changed
+  again in the same transition.
+- The body sequence runs in a FreeRTOS task through
+  `xTaskCreatePinnedToCore(a21_body_sequence_task, ...)`, so touch animation
+  does not block audio state transitions.
+- Focused overlay tests passed, `GOMAXPROCS=2 make verify` passed, and the
+  official-compatible product build passed. Current app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `50d1c963ae890837546199a96d44554f0226d395aae443091f418f48c2009e82`;
+  build report:
+  `reports/a21-stackchan-official-baseline-20260606-150747-1780729667971351000.json`.
+- No flash, NVS write, provider execution, ECS deploy, PMIC register write,
+  prune/gc, or rollback occurred. No-USB power-key behavior is still physically
+  unresolved and was not touched by this transition.
+
+Latest official StackChan/Xiaozhi natural-dialogue repair update, 2026-06-06 05:18 CST:
+
+- Added
+  `docs/plans/2026-06-06-stackchan-official-xiaozhi-natural-dialogue-repair.md`
+  after a focused read of the clean M5Stack StackChan frontend/lifecycle,
+  official AppAvatar body relay, Xiaozhi voice state machine, StackChan MCP
+  body tools, and current A21 Gateway turn/session code.
+- Confirmed the official-compatible product shape is:
+  official Launcher/Setup/Home first, user opens `AI.AGENT`, then Mooncake apps
+  are unloaded and Xiaozhi starts. Boot-time auto-start remains a regression
+  risk.
+- Confirmed `/stackChan/ws` is owned by official `AppAvatar` and is not a
+  reliable AI.AGENT/Xiaozhi body surface after Mooncake teardown. AI.AGENT body
+  parity must therefore come from Xiaozhi-runtime local StackChan sequences and
+  MCP tools, not only Gateway official-relay packets.
+- Implemented `T-A21-NATURAL-DIALOGUE-POST-PLAYBACK-GUARD-001` locally in
+  Gateway: normal completed-answer `tts.stop` now arms a stock-physical
+  product-only post-playback guard, `playback=stop_done` extends it, and Opus
+  tail frames inside the guard are dropped before decode/VAD/ASR while official
+  `listen.start` remains accepted.
+- Added a focused Gateway test proving guarded post-answer tail audio does not
+  start a second voice pipeline, while fresh speech after the guard still starts
+  the next answer.
+- Verification passed: focused Gateway tests, `git diff --check`, and
+  `GOMAXPROCS=2 make verify`.
+- Next candidate transition: `T-A21-XIAOZHI-NATIVE-BODY-SEQUENCE-001` for
+  AI.AGENT local StackChan motion/RGB/sound sequence parity. No
+  flash/deploy/provider/PMIC action occurred in this round.
+
 Latest control-ledger update, 2026-06-06 01:15 CST:
 
 - Added `docs/engineering/A21_ATOMIC_FEATURE_REVIEW_20260606.md` as the
@@ -46,6 +136,38 @@ Latest firmware overlay/build stabilization update, 2026-06-06 04:10 CST:
 - No flash/NVS/ECS/provider execution occurred in this transition. Next state
   is guarded product flash plus physical wake/touch/power acceptance only if
   the operator chooses to test this candidate.
+
+Latest full state-machine review update, 2026-06-06 04:31 CST:
+
+- Completed a read-only review across boot, official frontend, AI.AGENT,
+  Xiaozhi voice, Gateway turn/session, touch/body, official relay, PMIC/power,
+  voice mode, and firmware build/flash state machines.
+- Current truth for voice P0: official Xiaozhi normally returns to Listening
+  after normal completed-answer `tts.stop`; the Gateway must preserve that
+  behavior while proving it does not treat playback tail, stale turn audio, or
+  fallback text as fresh user input. A physical trace is still required before
+  changing normal auto-listen semantics.
+- Current truth for power P0: if no-USB PWRKEY produces only screen/red-LED
+  flash and no serial/app boot, the failing boundary is before Gateway,
+  provider, AI.AGENT, or Xiaozhi voice state. Current HEAD forbids restoring
+  speculative AXP2101 register writes without new stock/A21 A/B or hardware
+  measurement evidence.
+- Current truth for AI.AGENT body parity: official `/stackChan/ws` is owned by
+  the official `AppAvatar` path and is not reliable after entering Xiaozhi.
+  Gateway's MCP body fallback is therefore required in AI.AGENT, but physical
+  amplitude/UX evidence is still pending.
+- Current truth for official frontend: clean product builds keep official
+  Launcher/Setup/Home and start Xiaozhi only after `AI.AGENT`; the local
+  official source tree is dirty and contains an X21 auto-start hazard, so manual
+  builds from that dirty tree are unsafe.
+- Current truth for mode switching: roleplay/professional mode exists as a
+  Gateway global selection plus MCP ritual surface, not yet as a per-device/user
+  official-front-end mode selector.
+- Stale-doc risk: older PMIC plan target-state text still describes restoring
+  PMIC register writes, while later RCA updates and current tests forbid those
+  writes by default. Use current tests/RCA/checkpoint as authority.
+- Next action remains one P0 transition at a time: physical voice-loop trace,
+  no-USB timed power-key matrix, or AI.AGENT touch/body physical evidence.
 
 ## Stabilization Override
 

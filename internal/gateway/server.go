@@ -40,6 +40,7 @@ const xiaozhiTouchBargeInInputCooldownMS int64 = 700
 const xiaozhiHostSayInputCooldownMS int64 = 1200
 const xiaozhiNoSpeechInputCooldownMS int64 = 1200
 const xiaozhiPostTTSInputCooldownMS int64 = 900
+const xiaozhiPostPlaybackGuardMS int64 = 900
 const xiaozhiSuppressedListenDrainMS int64 = 1200
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const maxXiaozhiWakePrerollFrames = 5
@@ -1392,6 +1393,21 @@ type XiaozhiOTAWebSocketConfig struct {
 	Version int    `json:"version"`
 }
 
+type OfficialStackChanDeviceDataResponse struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+type OfficialStackChanUserData struct {
+	Username string `json:"username"`
+}
+
+type OfficialStackChanDeviceInfoData struct {
+	Name     string `json:"name"`
+	DeviceID string `json:"device_id,omitempty"`
+}
+
 const (
 	DeviceRegistrySchemaVersion               = "a21.gateway.devices.v1"
 	DeviceRegistryServiceName                 = "a21-gateway"
@@ -1755,6 +1771,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/stackChan/ws", s.handleOfficialStackChanWS)
 	mux.HandleFunc("/v1/stackchan/official/control", s.handleOfficialStackChanControl)
 	mux.HandleFunc("/v1/stackchan/official/status", s.handleOfficialStackChanStatus)
+	mux.HandleFunc("/stackChan/device/user", s.handleOfficialStackChanDeviceUser)
+	mux.HandleFunc("/stackChan/device/info", s.handleOfficialStackChanDeviceInfo)
+	mux.HandleFunc("/stackChan/device/unbind", s.handleOfficialStackChanDeviceUnbind)
 	mux.HandleFunc("/xiaozhi/ota/", s.handleXiaozhiOTA)
 	mux.HandleFunc("/xiaozhi/ota", s.handleXiaozhiOTA)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -5868,6 +5887,50 @@ func (s *Server) handleXiaozhiOTA(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleOfficialStackChanDeviceUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, OfficialStackChanDeviceDataResponse{
+		Code:    0,
+		Message: "ok",
+		Data: OfficialStackChanUserData{
+			Username: "A21",
+		},
+	})
+}
+
+func (s *Server) handleOfficialStackChanDeviceInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if deviceID == "" {
+		deviceID = defaultOfficialStackChanDeviceID
+	}
+	writeJSON(w, http.StatusOK, OfficialStackChanDeviceDataResponse{
+		Code:    0,
+		Message: "ok",
+		Data: OfficialStackChanDeviceInfoData{
+			Name:     "A21 StackChan",
+			DeviceID: deviceID,
+		},
+	})
+}
+
+func (s *Server) handleOfficialStackChanDeviceUnbind(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, OfficialStackChanDeviceDataResponse{
+		Code:    0,
+		Message: "ok",
+	})
+}
+
 func xiaozhiOTAWebSocketScheme(r *http.Request) string {
 	if r.TLS != nil {
 		return "wss"
@@ -7852,6 +7915,9 @@ type xiaozhiSession struct {
 	lastDownlinkAtMS               int64
 	lastDownlinkTurnID             string
 	lastPlaybackStopDoneAtMS       int64
+	postPlaybackGuardUntilMS       int64
+	postPlaybackGuardReason        string
+	postPlaybackFreshSpeechPending bool
 	inputCooldownUntilMS           int64
 	inputCooldownReason            string
 	officialStackChanState         string
@@ -8135,6 +8201,70 @@ func (session *xiaozhiSession) xiaozhiInputSuppression(nowMS int64) (bool, strin
 		return true, firstNonEmpty(session.inputCooldownReason, "cooldown")
 	}
 	return false, ""
+}
+
+func (session *xiaozhiSession) armXiaozhiPostPlaybackGuard(untilMS int64, reason string) {
+	if session == nil || untilMS <= 0 {
+		return
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if untilMS > session.postPlaybackGuardUntilMS {
+		session.postPlaybackGuardUntilMS = untilMS
+		session.postPlaybackGuardReason = safeGatewayFallbackToken(reason, "post_playback")
+	}
+	session.postPlaybackFreshSpeechPending = false
+}
+
+func (session *xiaozhiSession) extendXiaozhiPostPlaybackGuard(nowMS int64, guardMS int64, reason string) bool {
+	if session == nil || nowMS <= 0 || guardMS <= 0 {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.postPlaybackGuardUntilMS <= 0 {
+		return false
+	}
+	untilMS := nowMS + guardMS
+	if untilMS > session.postPlaybackGuardUntilMS {
+		session.postPlaybackGuardUntilMS = untilMS
+		session.postPlaybackGuardReason = safeGatewayFallbackToken(reason, "post_playback")
+	}
+	session.postPlaybackFreshSpeechPending = false
+	return true
+}
+
+func (session *xiaozhiSession) xiaozhiPostPlaybackGuardStatus(nowMS int64) (bool, bool, string, int64) {
+	if session == nil || nowMS <= 0 {
+		return false, false, "", 0
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.postPlaybackGuardUntilMS <= 0 {
+		return false, false, "", 0
+	}
+	reason := firstNonEmpty(session.postPlaybackGuardReason, "post_playback")
+	untilMS := session.postPlaybackGuardUntilMS
+	if nowMS < untilMS {
+		return true, false, reason, untilMS
+	}
+	session.postPlaybackGuardUntilMS = 0
+	session.postPlaybackGuardReason = ""
+	session.postPlaybackFreshSpeechPending = true
+	return false, true, reason, untilMS
+}
+
+func (session *xiaozhiSession) consumeXiaozhiPostPlaybackFreshSpeechPending() bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if !session.postPlaybackFreshSpeechPending {
+		return false
+	}
+	session.postPlaybackFreshSpeechPending = false
+	return true
 }
 
 func (session *xiaozhiSession) xiaozhiSuppressedListenActive() bool {
@@ -8843,6 +8973,9 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		session.listenStartedAtMS = 0
 		session.suppressedListenActive = false
 		session.ttsStopSent = false
+		session.postPlaybackGuardUntilMS = 0
+		session.postPlaybackGuardReason = ""
+		session.postPlaybackFreshSpeechPending = false
 		session.wakePrerollFrames = nil
 		session.wakePrerollPayloadBytes = nil
 		session.wakePrerollHasSpeech = false
@@ -9089,6 +9222,15 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 		}
 		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.ignored_not_listening", s.now().UnixMilli())
 		return true
+	}
+	nowMS := s.now().UnixMilli()
+	if active, released, reason, _ := session.xiaozhiPostPlaybackGuardStatus(nowMS); active {
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.ignored_post_playback_guard", nowMS)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.post_playback_tail_suppressed", nowMS)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.post_playback_tail_suppressed_"+safeGatewayFallbackToken(reason, "post_playback"), nowMS)
+		return true
+	} else if released {
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.post_playback_guard_released", nowMS)
 	}
 	session.mu.Lock()
 	session.opusFrameCount++
@@ -9445,14 +9587,19 @@ func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websock
 	s.metrics.audioIngressRMS.Set(result.RMS)
 	s.metrics.vadDetectorDecisions.WithLabelValues(vadDetectorLabel(result.VADDetector), vadDecisionLabel(result.SpeechDetected)).Inc()
 	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "audio.ingress.buffered", s.now().UnixMilli())
+	hasFreshSpeech := result.SpeechDetected || result.SpeechActive
 	for _, event := range result.Events {
 		switch event {
 		case audio.EventVADSpeechStart:
 			s.metrics.vadSpeechStartTotal.Inc()
+			hasFreshSpeech = true
 		case audio.EventVADSpeechEnd:
 			s.metrics.vadSpeechEndTotal.Inc()
 		}
 		s.recordTrace(id.traceID, id.sessionID, id.deviceID, string(event), s.now().UnixMilli())
+	}
+	if hasFreshSpeech && session.consumeXiaozhiPostPlaybackFreshSpeechPending() {
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.post_playback_fresh_speech_accepted", s.now().UnixMilli())
 	}
 	s.maybeAutoStopXiaozhiTurnOnIngress(ctx, conn, session, result.Events)
 }
@@ -10106,6 +10253,9 @@ func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event strin
 		session.mu.Lock()
 		session.lastPlaybackStopDoneAtMS = nowMS
 		session.mu.Unlock()
+		if session.extendXiaozhiPostPlaybackGuard(nowMS, xiaozhiPostPlaybackGuardMS, "playback_stop_done") {
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.post_playback_guard_extended", nowMS)
+		}
 	}
 	s.recordTrace(id.traceID, id.sessionID, id.deviceID, event, nowMS)
 	s.mu.Lock()
@@ -11638,7 +11788,19 @@ func (s *Server) writeXiaozhiTTSStopWithOptions(ctx context.Context, conn *webso
 		session.suppressXiaozhiInputUntil(untilMS, "post_tts_drain")
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.tts.stop.input_suppression_armed", s.now().UnixMilli())
 	}
+	if s.xiaozhiShouldArmPostPlaybackGuard(session, reason) {
+		nowMS := s.now().UnixMilli()
+		session.armXiaozhiPostPlaybackGuard(nowMS+xiaozhiPostPlaybackGuardMS, "normal_tts_stop")
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.post_playback_guard_armed", nowMS)
+	}
 	return true
+}
+
+func (s *Server) xiaozhiShouldArmPostPlaybackGuard(session *xiaozhiSession, reason string) bool {
+	return s != nil &&
+		session != nil &&
+		strings.EqualFold(strings.TrimSpace(reason), "voice_pipeline_answer_completed") &&
+		s.xiaozhiProductPlaybackEventsAllowed(session)
 }
 
 func xiaozhiShouldSuppressInputAfterTTSStop(reason string) bool {

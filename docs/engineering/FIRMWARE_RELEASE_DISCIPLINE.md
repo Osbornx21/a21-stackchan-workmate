@@ -289,6 +289,14 @@ only `wifi/ssid`, `wifi/password`, `wifi/ota_url`, `websocket/url`, and
 values redacted. Provider keys, proxy settings, V21 data, and generic
 `xiaozhi.bin` product flashing remain forbidden.
 
+For first-user delivery or no-preloaded-Wi-Fi acceptance, set
+`A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_FIRST_BOOT_CONFIG=1` on the same NVS
+lane. This explicit mode keeps the A21 OTA/stock WebSocket endpoint mutation
+but clears stale `wifi/ssid`, `wifi/password`, and `app_config/is_configed`, so
+the official StackChan BLE/mobile setup path is the only path that marks the
+device configured after Wi-Fi succeeds. It must not be combined with explicit
+Wi-Fi credential writes.
+
 When a real microphone bring-up window is available, mic-probe flashing uses its own explicit diagnostic lane:
 
 ```bash

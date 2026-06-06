@@ -111,6 +111,69 @@ func TestXiaozhiOTAEndpointUsesWSSBehindTLSReverseProxy(t *testing.T) {
 	}
 }
 
+func TestOfficialStackChanDeviceDataEndpointsMatchFirmwareParserShape(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	userReq := httptest.NewRequest(http.MethodGet, "/stackChan/device/user", nil)
+	userReq.Header.Set("Authorization", "hi-stack-chan")
+	userRec := httptest.NewRecorder()
+	handler.ServeHTTP(userRec, userReq)
+	if userRec.Code != http.StatusOK {
+		t.Fatalf("user status = %d, want 200: %s", userRec.Code, userRec.Body.String())
+	}
+	var userBody struct {
+		Code int `json:"code"`
+		Data struct {
+			Username string `json:"username"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(userRec.Body.Bytes(), &userBody); err != nil {
+		t.Fatal(err)
+	}
+	if userBody.Code != 0 || userBody.Data.Username == "" {
+		t.Fatalf("user body = %+v", userBody)
+	}
+
+	infoReq := httptest.NewRequest(http.MethodGet, "/stackChan/device/info?device_id=44%3A1b%3Af6%3Ae2%3A6a%3A60", nil)
+	infoReq.Header.Set("Authorization", "hi-stack-chan")
+	infoRec := httptest.NewRecorder()
+	handler.ServeHTTP(infoRec, infoReq)
+	if infoRec.Code != http.StatusOK {
+		t.Fatalf("info status = %d, want 200: %s", infoRec.Code, infoRec.Body.String())
+	}
+	var infoBody struct {
+		Code int `json:"code"`
+		Data struct {
+			Name     string `json:"name"`
+			DeviceID string `json:"device_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(infoRec.Body.Bytes(), &infoBody); err != nil {
+		t.Fatal(err)
+	}
+	if infoBody.Code != 0 || infoBody.Data.Name == "" || infoBody.Data.DeviceID != "44:1b:f6:e2:6a:60" {
+		t.Fatalf("info body = %+v", infoBody)
+	}
+
+	unbindReq := httptest.NewRequest(http.MethodPost, "/stackChan/device/unbind", nil)
+	unbindReq.Header.Set("Authorization", "hi-stack-chan")
+	unbindRec := httptest.NewRecorder()
+	handler.ServeHTTP(unbindRec, unbindReq)
+	if unbindRec.Code != http.StatusOK {
+		t.Fatalf("unbind status = %d, want 200: %s", unbindRec.Code, unbindRec.Body.String())
+	}
+	var unbindBody struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(unbindRec.Body.Bytes(), &unbindBody); err != nil {
+		t.Fatal(err)
+	}
+	if unbindBody.Code != 0 {
+		t.Fatalf("unbind body = %+v", unbindBody)
+	}
+}
+
 func TestGatewayProfilesCatalogDefaultsToPublicWSSAndAllowsMacLocalSwitch(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{
 		MacLocalGatewayURL: "ws://192.168.1.20:21081/v1/xiaozhi",
@@ -9260,6 +9323,123 @@ func TestXiaozhiWebSocketStockPhysicalAcceptsOfficialAutoListenAfterAnswer(t *te
 		if traceContains(traces, forbidden) {
 			t.Fatalf("trace unexpectedly contains %q after official auto-listen restart: %+v", forbidden, traces)
 		}
+	}
+}
+
+func TestXiaozhiWebSocketProductPostPlaybackGuardSuppressesTailButAllowsFreshSpeech(t *testing.T) {
+	now := time.Unix(1893456000, 0)
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiProductPlaybackEvents: true,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        reusableStreamingASRAdapter{name: "mock-streaming-asr"},
+			TextStream: singleSentenceTextStreamAdapter{},
+			TTS:        segmentChunkTTSAdapter{},
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	server.now = func() time.Time { return now }
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-post-playback-guard",
+		"session_id": "a21-session-xiaozhi-product-post-playback-guard",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":             true,
+			"aec":             true,
+			"playback_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	assertXiaozhiProductAnswerAudioUntilStop(t, ctx, conn)
+
+	traceID := "a21-trace-xiaozhi-product-post-playback-guard"
+	beforePipeline := traceEventCount(server.traceEvents(traceID), "xiaozhi.voice_pipeline.start")
+	if beforePipeline != 1 {
+		t.Fatalf("initial pipeline count = %d, want 1", beforePipeline)
+	}
+	if !traceContains(server.traceEvents(traceID), "xiaozhi.post_playback_guard_armed") {
+		t.Fatalf("trace missing post-playback guard arm: %+v", server.traceEvents(traceID))
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "playback",
+		"playback":   "stop_done",
+		"stream_id":  "a21-xiaozhi-stream-001",
+		"trace_id":   traceID,
+		"session_id": "a21-session-xiaozhi-product-post-playback-guard",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(100 * time.Millisecond)
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "listen",
+		"state":      "start",
+		"mode":       "realtime",
+		"trace_id":   traceID,
+		"session_id": "a21-session-xiaozhi-product-post-playback-guard",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(25 * time.Millisecond)
+	traces := server.traceEvents(traceID)
+	if !traceContains(traces, "xiaozhi.post_playback_tail_suppressed") {
+		t.Fatalf("trace missing post-playback tail suppression: %+v", traces)
+	}
+	if got := traceEventCount(traces, "xiaozhi.voice_pipeline.start"); got != beforePipeline {
+		t.Fatalf("pipeline count after guarded tail = %d, want %d", got, beforePipeline)
+	}
+
+	now = now.Add(time.Duration(xiaozhiPostPlaybackGuardMS+1) * time.Millisecond)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "listen",
+		"state":      "stop",
+		"mode":       "realtime",
+		"trace_id":   traceID,
+		"session_id": "a21-session-xiaozhi-product-post-playback-guard",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertXiaozhiProductAnswerAudioUntilStop(t, ctx, conn)
+
+	traces = server.traceEvents(traceID)
+	if got := traceEventCount(traces, "xiaozhi.voice_pipeline.start"); got != beforePipeline+1 {
+		t.Fatalf("pipeline count after fresh speech = %d, want %d: %+v", got, beforePipeline+1, traces)
+	}
+	if !traceContains(traces, "xiaozhi.post_playback_fresh_speech_accepted") {
+		t.Fatalf("trace missing fresh speech acceptance: %+v", traces)
 	}
 }
 

@@ -19,6 +19,359 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-06 15:24 CST - Endpoint Voice Breath, Wake, RGB, And Touch Repair
+
+Round goal:
+
+- Address the operator's four endpoint voice/body complaints without touching
+  PMIC, NVS, ECS, provider, or product flash: weak custom wake; post-TTS
+  re-wake weakness; RGB conflict with listening/ASR indication; slow screen
+  trigger/barge-in; and missing conversational breath after TTS.
+
+Actual completed work:
+
+- Lowered the A21 custom wake threshold from `20` to `16` in the
+  official-compatible product overlay.
+- Added a post-TTS breath timer gated by product playback events. Normal
+  completed `tts.stop` now leaves the device in Listening for 4200 ms; VAD
+  speech cancels the timer, while silence returns through the normal
+  stop-listening path to Idle so wake-word detection comes back.
+- Added `ArmA21PostTTSBreathWindow`, `CancelA21PostTTSBreathWindow`,
+  `a21_post_tts_breath_active_`, `a21_vad_speaking_`, and
+  `a21_post_tts_breath_timer_handle_` to the Xiaozhi runtime overlay.
+- Reordered speaking-state screen/top barge-in so touch event/abort/reset
+  happens before local body feedback.
+- Added `StartA21TouchListening` so Idle screen tap starts the default
+  auto/realtime listen mode instead of the manual-stop start handler.
+- Reduced touch RGB brightness and restored official LED state after local body
+  sequences while Listening/Speaking to prevent blue touch feedback from
+  masking the listening/ASR indication.
+- Updated official overlay tests to guard the new wake threshold, breath timer,
+  touch-listen helper, LED handoff, and barge-in ordering.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `docs/plans/2026-06-06-stackchan-official-xiaozhi-natural-dialogue-repair.md`
+
+Unfinished items:
+
+- No product flash or physical acceptance occurred in this turn.
+- The endpoint fix still needs one foreground hardware run validating first
+  wake, post-TTS re-wake after silence, post-TTS continuous follow-up speech,
+  ASR green/RGB ownership, screen tap start latency, and screen/top barge-in
+  latency.
+- No-USB power-key behavior remains a separate unresolved P0 issue.
+
+Known risks/blockers:
+
+- Lowering the wake threshold may improve sensitivity but must be checked for
+  false wakes in a real room.
+- The product build still reports the local official source checkout is dirty,
+  but it builds from `git_head_archive_read_only` and applies the A21 overlay in
+  `/tmp/a21-stackchan-official-clean`, so dirty source files are not compiled.
+
+Recommended next action:
+
+- Guarded product flash of the new candidate, then run a short foreground
+  acceptance script: first wake from Idle, answer, stay silent and confirm Idle
+  re-wake, answer again and speak within the 4200 ms breath, screen-tap start,
+  screen/top barge-in, RGB color observation.
+
+Tests/build/runtime results:
+
+- Focused official overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlay(SetsZiYueCustomWake|KeepsA21IdleSocketExplicitlyGated|AddsProductPlaybackAckOnly|UsesOfficialFrontendThenA21AgentRuntime)' -count=1`.
+- `GOMAXPROCS=2 make verify` passed.
+- `git diff --check` passed.
+- Tail whitespace scan passed.
+- `make a21-stackchan-official-xiaozhi-compatible-build` passed. Product app
+  artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`;
+  SHA-256:
+  `67e29577ab8910b1c3377c414f0f1d493698bb9530d28cc871aae5cc04ee94b7`;
+  report:
+  `reports/a21-stackchan-official-baseline-20260606-152341-1780730621001993000.json`.
+
+Forbidden actions avoided:
+
+- No product flash, no generic `xiaozhi.bin` lane, no NVS write, no
+  provider/V21 execution, no ECS deploy, no PMIC write experiment, no Git
+  prune/gc, and no rollback of internal-test3/internal-test4 behavior.
+
+## 2026-06-06 15:08 CST - AI.AGENT Native Body Sequence Build
+
+Round goal:
+
+- Continue the active official StackChan/Xiaozhi natural-dialogue repair plan by
+  moving AI.AGENT touch/body feedback from one-step local gestures toward
+  official-style native StackChan motion/RGB/sound sequences, without changing
+  PMIC, provider, ECS, NVS, or product flash state.
+
+Actual completed work:
+
+- Implemented `T-A21-XIAOZHI-NATIVE-BODY-SEQUENCE-001` in the
+  official-compatible Xiaozhi overlay.
+- Replaced the previous single-step touch RGB/servo feedback with a local
+  `A21BodySequenceStep`/`A21BodySequence` helper and named sequences for
+  attention, listening, thinking, speaking, screen tap, top tap,
+  top swipe forward, top swipe backward, and barge-in.
+- Wired current product touch handlers to run those sequences through
+  `xTaskCreatePinnedToCore(a21_body_sequence_task, ...)`, preserving the
+  existing touch event protocol and avoiding blocking audio state transitions.
+- Increased visible swipe/barge motion amplitude within the official
+  StackChan servo range and added explicit `goHome` returns after touch
+  sequences.
+- Updated overlay tests to guard the native body sequence helper, async task,
+  `moveWithSpeed`, `goHome`, and the new sequence names.
+- Corrected overlay hunk counts so the patch no longer reports `corrupt patch`
+  under ordinary `git apply --check`; a clean HEAD archive without fetched
+  `xiaozhi-esp32` dependencies now reaches the expected missing-file boundary,
+  while the product build path applies the overlay successfully after dependency
+  hydration.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `docs/plans/2026-06-06-stackchan-official-xiaozhi-natural-dialogue-repair.md`
+
+Unfinished items:
+
+- The attention/listening/thinking/speaking sequence names exist in the helper,
+  but only touch/barge handlers are wired in this transition. State lifecycle
+  body hooks remain a separate, smaller follow-up.
+- No physical touch amplitude evidence was collected in this turn.
+- No-USB PWRKEY behavior remains unresolved and outside this body transition.
+
+Known risks/blockers:
+
+- The official source checkout at
+  `/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan` is dirty, but
+  the product build reported `source_export_mode=git_head_archive_read_only`,
+  so this build used HEAD export rather than local dirty source contents.
+- Physical acceptance still needs a foreground run comparing A21 screen/top
+  touch, swipe, RGB, vibration, and servo amplitude against the official
+  StackChan setup/avatar behavior.
+
+Recommended next action:
+
+- If the operator is ready for hardware acceptance, flash only the guarded
+  official-compatible product artifact and test wake/listen/no-self-loop plus
+  screen/top touch amplitude in one foreground run.
+- If avoiding flash, implement the next small lifecycle hook so wake/listen/
+  thinking/speaking states trigger the new local sequences without touching
+  Gateway voice semantics again.
+
+Tests/build/runtime results:
+
+- `GOMAXPROCS=2 go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlay(AddsProductPlaybackAckOnly|UsesOfficialFrontendThenA21AgentRuntime)' -count=1`
+  passed.
+- `git diff --check` passed before docs update.
+- Tail whitespace scan passed before docs update.
+- `GOMAXPROCS=2 make verify` passed.
+- `make a21-stackchan-official-xiaozhi-compatible-build` passed. Product app
+  artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`;
+  SHA-256:
+  `50d1c963ae890837546199a96d44554f0226d395aae443091f418f48c2009e82`;
+  report:
+  `reports/a21-stackchan-official-baseline-20260606-150747-1780729667971351000.json`.
+
+Forbidden actions avoided:
+
+- No product flash, no generic `xiaozhi.bin` lane, no NVS write, no
+  provider/V21 execution, no ECS deploy, no PMIC write experiment, no Git
+  prune/gc, and no rollback of internal-test3/internal-test4 behavior.
+
+## 2026-06-06 05:18 CST - Official StackChan Xiaozhi Natural Dialogue Repair Plan
+
+Round goal:
+
+- Deep-read the clean M5Stack StackChan source/state machines and Xiaozhi voice
+  state machine to determine how A21 should be repaired for natural dialogue,
+  body parity, and official frontend alignment without destabilizing the
+  internal-test4 recovery floor.
+
+Actual completed work:
+
+- Read the clean official StackChan boot/frontend path:
+  `main.cpp`, `AppLauncher`, `AppAiAgent`, `AppSetup`, `AppAvatar`, HAL
+  startup, official websocket avatar relay, MCP robot tools, PMIC/board init,
+  servo/RGB test paths, and motion primitives.
+- Read the clean official-compatible Xiaozhi path:
+  application state changes, wake/toggle/start/stop listening, `tts.stop`
+  handling, playback/touch product extensions, hello feature negotiation, and
+  MCP server registration.
+- Re-read current A21 Gateway turn/session logic around listen start/stop,
+  input suppression, playback start/stop_done, stale Opus suppression, stock
+  physical auto-stop handling, and current tests that allow normal auto-listen
+  after a completed answer.
+- Created a concrete repair plan:
+  `docs/plans/2026-06-06-stackchan-official-xiaozhi-natural-dialogue-repair.md`.
+- Implemented `T-A21-NATURAL-DIALOGUE-POST-PLAYBACK-GUARD-001` in Gateway:
+  normal completed-answer `tts.stop` arms a product-only post-playback guard for
+  stock physical playback-events sessions, device `playback=stop_done` extends
+  it, Opus frames inside the guard are dropped before decode/VAD/ASR, and the
+  first fresh VAD speech after release is traced as accepted.
+- Added a focused Gateway regression test proving post-answer tail audio does
+  not start a second pipeline while fresh speech after the guard still answers.
+
+Changed files:
+
+- `docs/plans/2026-06-06-stackchan-official-xiaozhi-natural-dialogue-repair.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+
+Unfinished items:
+
+- No official overlay/body-sequence code was changed yet.
+- No product flash, ECS deploy, provider execution, NVS write, serial action,
+  or PMIC register action occurred.
+- Physical self-loop, body amplitude, and no-USB power acceptance remain open.
+
+Known risks/blockers:
+
+- The current Gateway test suite intentionally allows stock physical
+  auto-listen after a normal completed answer. That is correct protocol parity
+  but not sufficient product protection against real speaker-tail self-loop.
+- AI.AGENT body parity cannot rely on `/stackChan/ws` after Mooncake teardown;
+  depending on the official AppAvatar relay in Xiaozhi runtime will stay flaky.
+- No-USB PWRKEY symptoms remain outside Gateway/provider/voice until stock/A21
+  power-key A/B evidence proves otherwise.
+
+Recommended next action:
+
+- Implement `T-A21-XIAOZHI-NATIVE-BODY-SEQUENCE-001`: move AI.AGENT touch/state
+  body feedback into Xiaozhi-runtime local StackChan motion/RGB/sound sequences
+  and MCP tools instead of depending on official Avatar relay.
+- After body sequence tests pass, build the official-compatible product artifact
+  and collect one foreground physical trace for wake/listen/answer/no-self-loop
+  plus touch/body amplitude.
+
+Tests/build/runtime results:
+
+- Focused Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhiWebSocket(ProductPostPlaybackGuardSuppressesTailButAllowsFreshSpeech|StockPhysicalAcceptsOfficialAutoListenAfterAnswer|NoSpeech|TouchAbortSuppressesImmediateListenRestart|StreamingAnswerWithRealtimeAudioSuppressesLocalFallbackAfterAudio)' -count=1`.
+- `git diff --check` passed.
+- Tail whitespace scan passed for touched docs and Gateway files.
+- `GOMAXPROCS=2 make verify` passed.
+
+Forbidden actions avoided:
+
+- No product flash, no generic `xiaozhi.bin` lane, no NVS write, no
+  provider/V21 execution, no ECS deploy, no PMIC write experiment, no Git
+  prune/gc, and no rollback of internal-test3/internal-test4 behavior.
+
+## 2026-06-06 04:31 CST - Full State-Machine Review Checkpoint
+
+Round goal:
+
+- Deep-review the current boot, AI.AGENT, Xiaozhi voice, touch/body,
+  official-relay, Gateway session, PMIC/power, mode-switch, and firmware
+  build/flash state machines without changing code, flashing, deploying, or
+  reopening already completed internal-test4 work.
+
+Actual completed work:
+
+- Re-read the current branch state and confirmed HEAD contains the internal
+  test4 recovery floor plus the later PMIC parity rollback and official overlay
+  build stabilization commits.
+- Compared current code against the latest P0 RCA documents, current tests,
+  the clean official StackChan export, the local dirty official StackChan tree,
+  and the Xiaozhi application state transitions.
+- Confirmed the clean official path is still official frontend first:
+  `AppLauncher`/`AppAiAgent`/`AppAvatar`/`AppSetup` are installed, and Xiaozhi
+  starts only after AI.AGENT requests it.
+- Confirmed the local official source tree is dirty and contains an
+  `CONFIG_X21_STACKCHAN_AUTO_START_XIAOZHI` path. Current product builds export
+  git HEAD/clean source, but manual work from that dirty tree is a real
+  operator hazard.
+- Confirmed the current product overlay keeps the A21 quiet control channel
+  present but default-off, and forbids the previous touch/manual-start
+  divergence from official Xiaozhi manual-stop semantics.
+- Confirmed normal official `tts.stop` after a completed answer intentionally
+  returns the device to Listening unless manual-stop mode is active. Current
+  Gateway tests intentionally allow a stock physical client to auto-listen
+  after a normal answer, while suppressing immediate listen restarts after
+  host-say, placeholder/no-speech, touch abort, degraded, error, or unavailable
+  paths.
+- Confirmed the no-USB power symptom is currently bounded before Gateway,
+  provider, AI.AGENT, or Xiaozhi voice code can participate when the device does
+  not reach serial/app logs. Current tests forbid reintroducing speculative
+  AXP2101 `REG10`/`REG22`/`REG24`/`REG27=0x10` writes without new evidence.
+- Confirmed AI.AGENT body behavior must not depend on `/stackChan/ws` being
+  alive: official `AppAvatar` owns the relay and Mooncake apps are unloaded
+  when entering Xiaozhi. Gateway has an MCP fallback for touch/body reactions,
+  but physical amplitude/UX remains pending.
+- Confirmed roleplay/professional selection exists as Gateway global state and
+  HTTP/MCP ritual surface, not yet as a per-device/user official-front-end mode
+  selector.
+- Found a stale-doc risk: the PMIC parity plan still contains older target-state
+  text about restoring PMIC register writes, while its later update and current
+  tests say those writes were removed and must not be restored by default.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- No product flash was executed.
+- No ECS deploy, provider execution, V21 execution, NVS write, or serial action
+  occurred.
+- Voice self-loop remains unresolved until a physical product trace proves
+  whether the repeated turn is speaker echo capture, provider repeated output,
+  local fallback/placeholder handling, or normal official auto-listen without
+  repeated audio/text.
+- No-USB power remains unresolved until a timed stock/A21 power-key matrix and
+  battery/rail evidence distinguish hardware/PMIC hold failure from firmware
+  delta.
+- Touch/body parity remains unresolved until AI.AGENT-mode physical evidence
+  proves local RGB/servo/sound and Gateway MCP fallback amplitude are not worse
+  than stock.
+
+Known risks/blockers:
+
+- Old plans and state notes can still contradict later recovery decisions; use
+  current HEAD tests, current P0 RCA docs, and this checkpoint as the active
+  truth before editing.
+- The dirty local official StackChan source tree must not be used as an
+  uncontrolled manual build/flash source.
+- Current build-ready artifact from the 04:10 transition is not physical
+  acceptance; it is only a guarded candidate until flashed and validated.
+
+Recommended next action:
+
+- Do only one P0 transition at a time: first collect the physical stock
+  `/v1/xiaozhi` trace for wake/reply/self-loop, or run the no-USB timed
+  power-key matrix, or run AI.AGENT touch/body physical evidence. Do not mix
+  these with broad feature work or speculative PMIC/register patches.
+
+Tests/build/runtime results:
+
+- This round was a read-only state-machine audit plus doc checkpoint.
+- No tests/builds were run in this round before the doc update.
+- Evidence relied on existing current-HEAD tests and earlier recorded results:
+  official overlay/build stabilization passed at 04:10, `GOMAXPROCS=2 make
+  verify` passed there, and the current tests lock PMIC write removal,
+  default-off quiet control, official manual-start semantics, touch/body
+  fallback, and official auto-listen behavior.
+
+Forbidden actions avoided:
+
+- No code changes, no product flash, no NVS write, no ECS deploy, no
+  provider/V21 execution, no generic `xiaozhi.bin` product lane, no Git
+  prune/gc, and no rollback of internal-test3 voice/protocol changes.
+
 ## 2026-06-06 04:10 CST - Official Overlay Build Stabilized
 
 Round goal:

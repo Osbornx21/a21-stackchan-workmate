@@ -301,6 +301,11 @@ func TestOfficialXiaozhiCompatibleOverlayUsesOfficialFrontendThenA21AgentRuntime
 		`CONFIG_OTA_URL="http://47.103.57.217/xiaozhi/ota/"`,
 		`CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"`,
 		`return CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL;`,
+		`account_server_base_url()`,
+		`base.rfind("wss://", 0)`,
+		`/stackChan/device/user`,
+		`/stackChan/device/info`,
+		`/stackChan/device/unbind`,
 		`/stackChan/ws?deviceType=StackChan&device_id={}`,
 		`CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y`,
 		`# CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL is not set`,
@@ -316,6 +321,7 @@ func TestOfficialXiaozhiCompatibleOverlayUsesOfficialFrontendThenA21AgentRuntime
 		`diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp`,
 		`A21_OEM_AUTOSTART_XIAOZHI`,
 		`CONFIG_X21_STACKCHAN_AUTO_START_XIAOZHI=y`,
+		`+static const std::string_view _get_device_info_url          = "http://47.113.125.164:12800`,
 		`diff --git a/firmware/main/hal/hal_ble.cpp b/firmware/main/hal/hal_ble.cpp`,
 		`diff --git a/firmware/main/apps/app_setup/`,
 		`+        WriteReg(0x27, 0x10);`,
@@ -438,7 +444,7 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 		`CONFIG_USE_CUSTOM_WAKE_WORD=y`,
 		`CONFIG_CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`,
 		`CONFIG_CUSTOM_WAKE_WORD_DISPLAY="紫悦"`,
-		`CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20`,
+		`CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=16`,
 		`A21 overriding asset multinet commands with sdkconfig custom wake commands`,
 		`command_list.find('|', start)`,
 		`commands_.push_back({command, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});`,
@@ -517,8 +523,6 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketExplicitlyGated(t *te
 		t.Fatal("official Xiaozhi-compatible overlay must patch ContinueWakeWordInvoke itself, not only a nearby helper with similar context")
 	}
 	forbiddenAdded := []string{
-		`+            ListeningMode mode = GetDefaultListeningMode();`,
-		`+                ContinueOpenAudioChannel(mode);`,
 		`+        SetListeningMode(GetDefaultListeningMode());`,
 		`+    if (mode == kListeningModeAutoStop && vad_stop_timer_handle_ != nullptr) {`,
 		`+            listening_mode_ != kListeningModeAutoStop ||`,
@@ -586,6 +590,13 @@ func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T
 		`a21_product_playback_events_allowed_`,
 		`a21_product_keepalive_events_allowed_`,
 		`a21_product_touch_events_allowed_`,
+		`A21_POST_TTS_BREATH_MS 4200`,
+		`a21_post_tts_breath_timer_handle_`,
+		`a21_post_tts_breath_active_`,
+		`a21_vad_speaking_`,
+		`ArmA21PostTTSBreathWindow`,
+		`CancelA21PostTTSBreathWindow`,
+		`StartA21TouchListening`,
 		`esp_timer_handle_t a21_keepalive_timer_handle_ = nullptr;`,
 		`SendA21Keepalive`,
 		`cJSON_AddStringToObject(root, "kind", "heartbeat");`,
@@ -607,15 +618,30 @@ func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T
 		`HandleA21ScreenTouchEvent`,
 		`HandleA21HeadPetGesture`,
 		`ApplyA21TouchLocalFeedback`,
+		`struct A21BodySequenceStep`,
+		`a21_select_body_sequence`,
+		`a21_run_body_sequence`,
+		`a21_body_sequence_task`,
+		`xTaskCreatePinnedToCore(a21_body_sequence_task`,
+		`motion.goHome(step.speed);`,
+		`motion.moveWithSpeed(step.yaw, step.pitch, step.speed);`,
+		`Board::GetInstance().GetLed()->OnStateChanged();`,
 		`Lang::Sounds::OGG_VIBRATION`,
 		`leftNeonLight().setColor`,
 		`rightNeonLight().setColor`,
+		`attention_sequence`,
+		`listening_sequence`,
+		`thinking_sequence`,
+		`speaking_sequence`,
 		`top_swipe_forward`,
+		`top_swipe_backward`,
 		`top_barge_in`,
-		`yaw = 900;`,
-		`yaw = -900;`,
-		`pitch = 760;`,
-		`speed = 950;`,
+		`+        AbortSpeaking(kAbortReasonNone);
++        ApplyA21TouchLocalFeedback("screen_barge_in");`,
+		`+        StartA21TouchListening();
++        ApplyA21TouchLocalFeedback("screen_tap");`,
+		`1150, 760, 980`,
+		`-1150, 300, 980`,
 		`callbacks.on_playback_started`,
 		`AudioOutputTask()`,
 		`audio_service_.ResetDecoder();`,
@@ -657,6 +683,7 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesXiaozhiWifiProvisioning(t *tes
 		`# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set`,
 		`# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set`,
 		`CONFIG_OTA_URL="http://47.103.57.217/xiaozhi/ota/"`,
+		`/stackChan/device/info`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing Wi-Fi provisioning contract %q", required)
@@ -667,6 +694,7 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesXiaozhiWifiProvisioning(t *tes
 		`CONFIG_WIFI_PASSWORD=`,
 		`A21_WIFI_PASSWORD`,
 		`101.132.117.182`,
+		`+static const std::string_view _get_device_info_url          = "http://47.113.125.164:12800`,
 	} {
 		if strings.Contains(overlay, forbidden) {
 			t.Fatalf("official Xiaozhi-compatible overlay must not hardcode stale Wi-Fi/provisioning value %q", forbidden)
@@ -1990,6 +2018,41 @@ func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanRedactsExplicitWiFiCredenti
 	}
 }
 
+func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanSupportsFirstBootConfig(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-nvs-plan",
+		"--port", "/dev/cu.usbmodemA21",
+		"--ota-url", "http://192.0.2.10:21080/xiaozhi/ota/",
+		"--websocket-url", "ws://192.0.2.10:21080/v1/xiaozhi",
+		"--first-boot-config",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"first_boot_config_mode": true`,
+		`"clears_wifi_credentials_for_first_boot": true`,
+		`"clears_app_config_for_first_boot": true`,
+		`"preserves_wifi_credentials": false`,
+		`"only_mutates_xiaozhi_connection_keys": false`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("first-boot nvs plan missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanRejectsLoopbackGateway(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
@@ -2191,7 +2254,7 @@ func TestOfficialXiaozhiCompatibleNVSCSVPreservesWiFiAndClearsWebsocketToken(t *
 	}
 
 	var csv bytes.Buffer
-	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "", "")
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "", "", false)
 	if err != nil {
 		t.Fatalf("write csv: %v", err)
 	}
@@ -2240,7 +2303,7 @@ func TestOfficialXiaozhiCompatibleNVSCSVCanWriteExplicitWiFiCredentials(t *testi
 	}
 
 	var csv bytes.Buffer
-	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "A21-Lab-WiFi", "secret-password-123")
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "A21-Lab-WiFi", "secret-password-123", false)
 	if err != nil {
 		t.Fatalf("write csv: %v", err)
 	}
@@ -2281,7 +2344,7 @@ func TestOfficialXiaozhiCompatibleNVSCSVReplacesStaleAppConfigGate(t *testing.T)
 	}
 
 	var csv bytes.Buffer
-	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "A21-Lab-WiFi", "secret-password-123")
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "A21-Lab-WiFi", "secret-password-123", false)
 	if err != nil {
 		t.Fatalf("write csv: %v", err)
 	}
@@ -2298,6 +2361,65 @@ func TestOfficialXiaozhiCompatibleNVSCSVReplacesStaleAppConfigGate(t *testing.T)
 		t.Fatalf("csv retained stale app config gate:\n%s", text)
 	}
 	if summary.ExistingConnectionEntryCount != 1 || !summary.AppConfigMarkedConfigured {
+		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func TestOfficialXiaozhiCompatibleNVSCSVFirstBootConfigClearsWiFiAndAppConfig(t *testing.T) {
+	entries := []stackChanNVSMinimalEntry{
+		{Namespace: "board", Key: "uuid", Encoding: "string", Data: "device-uuid", State: "Written"},
+		{Namespace: "wifi", Key: "ssid", Encoding: "string", Data: "old-wifi", State: "Written"},
+		{Namespace: "wifi", Key: "password", Encoding: "string", Data: "old-secret", State: "Written"},
+		{Namespace: "wifi", Key: "ota_url", Encoding: "string", Data: "http://old.example/xiaozhi/ota/", State: "Written"},
+		{Namespace: "websocket", Key: "url", Encoding: "string", Data: "wss://old.example/v1/xiaozhi", State: "Written"},
+		{Namespace: "websocket", Key: "token", Encoding: "string", Data: "old-token", State: "Written"},
+		{Namespace: "app_config", Key: "is_configed", Encoding: "uint8_t", Data: float64(1), State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_1", Encoding: "int32_t", Data: float64(460), State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_2", Encoding: "int32_t", Data: float64(620), State: "Written"},
+	}
+
+	var csv bytes.Buffer
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "", "", true)
+	if err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	text := csv.String()
+	for _, want := range []string{
+		"board,namespace,,",
+		"uuid,data,string,device-uuid",
+		"wifi,namespace,,",
+		"ota_url,data,string,http://192.0.2.10:21080/xiaozhi/ota/",
+		"websocket,namespace,,",
+		"url,data,string,ws://192.0.2.10:21080/v1/xiaozhi",
+		"version,data,u32,1",
+		"servo,namespace,,",
+		"zero_pos_1,data,i32,460",
+		"zero_pos_2,data,i32,620",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("csv missing %q:\n%s", want, text)
+		}
+	}
+	for _, forbidden := range []string{
+		"old-wifi",
+		"old-secret",
+		"ssid,data",
+		"password,data",
+		"app_config,namespace",
+		"is_configed,data",
+		"old-token",
+		"wss://old.example",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("first-boot csv retained forbidden value %q:\n%s", forbidden, text)
+		}
+	}
+	if !summary.WiFiCredentialsCleared ||
+		!summary.AppConfigCleared ||
+		summary.WiFiCredentialsPreserved ||
+		summary.WiFiCredentialsWritten ||
+		summary.AppConfigMarkedConfigured ||
+		!summary.ServoCalibrationPresent {
 		t.Fatalf("summary = %+v", summary)
 	}
 }

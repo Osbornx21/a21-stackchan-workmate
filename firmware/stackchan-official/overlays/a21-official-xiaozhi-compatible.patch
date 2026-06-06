@@ -56,7 +56,8 @@ index 304e48d..b9adb2a 100644
 +    default "ws://47.103.57.217"
 +    help
 +        WebSocket base URL for the official StackChan avatar/action relay.
-+        This is the Gateway origin only; the firmware appends /stackChan/ws.
++        This is the Gateway origin only; the firmware appends /stackChan/ws and
++        derives HTTP(S) account/device-info endpoints from the same origin.
 +
  choice
      prompt "Default Language"
@@ -193,6 +194,74 @@ index 5f9efcf..cc670b6 100644
      /* ----------------------------------- RGB ---------------------------------- */
      void setRgbColor(uint8_t index, uint8_t r, uint8_t g, uint8_t b);
      void showRgbColor(uint8_t r, uint8_t g, uint8_t b);
+diff --git a/firmware/main/hal/hal_account.cpp b/firmware/main/hal/hal_account.cpp
+index 73a49ce..f7e5d74 100644
+--- a/firmware/main/hal/hal_account.cpp
++++ b/firmware/main/hal/hal_account.cpp
+@@ -10,6 +10,7 @@
+ #include <memory>
+ #include <board.h>
+ #include <cJSON.h>
+-
++#include <string>
++
+ static const std::string_view _tag = "HAL-Account";
+@@ -18,7 +19,37 @@ static const std::string_view _setting_username_key    = "username";
+ static const std::string_view _setting_device_name_key = "device_name";
+-
+-static const std::string_view _get_user_account_info_url    = "http://47.113.125.164:12800/stackChan/device/user";
+-static const std::string_view _get_device_info_url          = "http://47.113.125.164:12800/stackChan/device/info";
+-static const std::string_view _unbind_user_account_info_url = "http://47.113.125.164:12800/stackChan/device/unbind";
+-
++static std::string account_server_base_url()
++{
++    std::string base = secret_logic::get_server_url();
++    if (base.rfind("wss://", 0) == 0) {
++        base = std::string("https://") + base.substr(6);
++    } else if (base.rfind("ws://", 0) == 0) {
++        base = std::string("http://") + base.substr(5);
++    }
++    while (!base.empty() && base.back() == '/') {
++        base.pop_back();
++    }
++    return base;
++}
++
++static std::string get_user_account_info_url()
++{
++    return account_server_base_url() + "/stackChan/device/user";
++}
++
++static std::string get_device_info_url()
++{
++    return account_server_base_url() + "/stackChan/device/info";
++}
++
++static std::string unbind_user_account_info_url()
++{
++    return account_server_base_url() + "/stackChan/device/unbind";
++}
++
+ static bool request_authorized_get(std::string_view token, std::string_view url, std::string &response,
+@@ -60,3 +91,4 @@ static bool fetch_username(std::string_view token, std::string &username, std::f
+     std::string response;
+-    if (!request_authorized_get(token, _get_user_account_info_url, response, onLog)) {
++    std::string url = get_user_account_info_url();
++    if (!request_authorized_get(token, url, response, onLog)) {
+         return false;
+@@ -103,3 +135,4 @@ static bool fetch_device_name(std::string_view token, std::string &deviceName,
+     std::string response;
+-    if (!request_authorized_get(token, _get_device_info_url, response, onLog)) {
++    std::string url = get_device_info_url();
++    if (!request_authorized_get(token, url, response, onLog)) {
+         return false;
+@@ -194,4 +227,5 @@ bool Hal::unbindAccount(std::function<void(std::string_view)> onLog)
+     onLog("Unbinding account...");
+-
+-    if (!http->Open("POST", std::string(_unbind_user_account_info_url))) {
++    std::string url = unbind_user_account_info_url();
++    if (!http->Open("POST", url)) {
+         mclog::tagError(_tag, "failed to open http request");
 diff --git a/firmware/main/hal/hal_ws_avatar.cpp b/firmware/main/hal/hal_ws_avatar.cpp
 index 0fc43ec..7729a90 100644
 --- a/firmware/main/hal/hal_ws_avatar.cpp
@@ -271,7 +340,7 @@ index 4db623a..913da03 100644
 +CONFIG_USE_CUSTOM_WAKE_WORD=y
 +CONFIG_CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"
 +CONFIG_CUSTOM_WAKE_WORD_DISPLAY="紫悦"
-+CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20
++CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=16
 +# CONFIG_WAKE_WORD_DETECTION_IN_LISTENING is not set
 +# CONFIG_SR_MN_CN_NONE is not set
 +CONFIG_SR_MN_CN_MULTINET7_QUANT=y
@@ -283,11 +352,13 @@ diff --git a/firmware/xiaozhi-esp32/main/application.cc b/firmware/xiaozhi-esp32
 index 3b6f07e..ffbf932 100644
 --- a/firmware/xiaozhi-esp32/main/application.cc
 +++ b/firmware/xiaozhi-esp32/main/application.cc
-@@ -10,6 +10,9 @@
+@@ -10,6 +10,11 @@
  #include "assets.h"
  #include "settings.h"
 
 +#include <apps/common/common.h>
++#include <freertos/FreeRTOS.h>
++#include <freertos/task.h>
 +#include <hal/hal.h>
 +#include <stackchan/stackchan.h>
  #include <cstring>
@@ -296,21 +367,61 @@ index 3b6f07e..ffbf932 100644
 @@ -19,7 +22,6 @@
 
  #define TAG "Application"
++#define A21_POST_TTS_BREATH_MS 4200
 
 -
  Application::Application() {
      event_group_ = xEventGroupCreate();
 
-@@ -44,6 +46,7 @@ Application::Application() {
+@@ -44,6 +47,25 @@ Application::Application() {
          .skip_unhandled_events = true
      };
      esp_timer_create(&clock_timer_args, &clock_timer_handle_);
-+
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    esp_timer_create_args_t a21_post_tts_breath_timer_args = {
++        .callback = [](void* arg) {
++            Application* app = (Application*)arg;
++            app->Schedule([app]() {
++                if (!app->a21_post_tts_breath_active_.load() ||
++                    app->a21_vad_speaking_.load() ||
++                    app->GetDeviceState() != kDeviceStateListening) {
++                    return;
++                }
++                app->a21_post_tts_breath_active_ = false;
++                app->HandleStopListeningEvent();
++            });
++        },
++        .arg = this,
++        .dispatch_method = ESP_TIMER_TASK,
++        .name = "a21_post_tts_breath",
++        .skip_unhandled_events = true
++    };
++    esp_timer_create(&a21_post_tts_breath_timer_args, &a21_post_tts_breath_timer_handle_);
++#endif
  }
 
  Application::~Application() {
+@@ -52,6 +74,12 @@ Application::~Application() {
+         esp_timer_stop(clock_timer_handle_);
+         esp_timer_delete(clock_timer_handle_);
+     }
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    if (a21_post_tts_breath_timer_handle_ != nullptr) {
++        esp_timer_stop(a21_post_tts_breath_timer_handle_);
++        esp_timer_delete(a21_post_tts_breath_timer_handle_);
++    }
++#endif
+     vEventGroupDelete(event_group_);
+ }
+
 @@ -83,8 +86,32 @@ void Application::Initialize() {
      callbacks.on_vad_change = [this](bool speaking) {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++        a21_vad_speaking_ = speaking;
++        if (speaking) {
++            CancelA21PostTTSBreathWindow();
++        }
++#endif
          xEventGroupSetBits(event_group_, MAIN_EVENT_VAD_CHANGE);
      };
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
@@ -399,7 +510,7 @@ index 3b6f07e..ffbf932 100644
 
      // Release OTA object after activation is complete
      ota_.reset();
-@@ -317,9 +355,171 @@ void Application::HandleActivationDoneEvent() {
+@@ -317,9 +355,258 @@ void Application::HandleActivationDoneEvent() {
      Schedule([this]() {
          // Play the success sound to indicate the device is ready
          audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
@@ -450,61 +561,192 @@ index 3b6f07e..ffbf932 100644
 +#endif
 +}
 +
++void Application::ArmA21PostTTSBreathWindow() {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    if (a21_post_tts_breath_timer_handle_ == nullptr) {
++        return;
++    }
++    a21_vad_speaking_ = false;
++    a21_post_tts_breath_active_ = true;
++    esp_timer_stop(a21_post_tts_breath_timer_handle_);
++    esp_timer_start_once(a21_post_tts_breath_timer_handle_, A21_POST_TTS_BREATH_MS * 1000);
++#endif
++}
++
++void Application::CancelA21PostTTSBreathWindow() {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    a21_post_tts_breath_active_ = false;
++    if (a21_post_tts_breath_timer_handle_ != nullptr) {
++        esp_timer_stop(a21_post_tts_breath_timer_handle_);
++    }
++#endif
++}
++
++void Application::StartA21TouchListening() {
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    if (!protocol_) {
++        return;
++    }
++    ListeningMode mode = GetDefaultListeningMode();
++    if (!protocol_->IsAudioChannelOpened()) {
++        SetDeviceState(kDeviceStateConnecting);
++        Schedule([this, mode]() {
++            ContinueOpenAudioChannel(mode);
++        });
++        return;
++    }
++    SetListeningMode(mode);
++#endif
++}
++
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++struct A21BodySequenceStep {
++    int32_t yaw;
++    int32_t pitch;
++    int speed;
++    uint32_t hold_ms;
++    uint8_t red;
++    uint8_t green;
++    uint8_t blue;
++    bool move_head;
++    bool go_home;
++};
++
++struct A21BodySequence {
++    const A21BodySequenceStep* steps;
++    size_t count;
++};
++
++static A21BodySequence a21_select_body_sequence(const char* name) {
++    static const A21BodySequenceStep attention_sequence[] = {
++        {0, 640, 760, 90, 0, 180, 255, true, false},
++        {0, 0, 680, 0, 0, 80, 140, true, true},
++    };
++    static const A21BodySequenceStep listening_sequence[] = {
++        {-280, 480, 520, 80, 0, 210, 255, true, false},
++        {280, 560, 520, 80, 0, 210, 255, true, false},
++        {0, 220, 500, 0, 0, 120, 220, true, false},
++    };
++    static const A21BodySequenceStep thinking_sequence[] = {
++        {-520, 360, 420, 120, 120, 80, 255, true, false},
++        {520, 280, 420, 120, 120, 80, 255, true, false},
++        {0, 420, 420, 0, 80, 60, 180, true, false},
++    };
++    static const A21BodySequenceStep speaking_sequence[] = {
++        {180, 360, 360, 70, 0, 190, 255, true, false},
++        {-180, 430, 360, 70, 0, 190, 255, true, false},
++        {0, 320, 340, 0, 0, 120, 220, true, false},
++    };
++    static const A21BodySequenceStep screen_tap_sequence[] = {
++        {0, 900, 820, 70, 0, 96, 140, true, false},
++        {0, 0, 700, 0, 0, 24, 48, true, true},
++    };
++    static const A21BodySequenceStep top_tap_sequence[] = {
++        {-220, 900, 820, 70, 0, 110, 150, true, false},
++        {220, 760, 780, 70, 0, 90, 130, true, false},
++        {0, 0, 700, 0, 0, 24, 48, true, true},
++    };
++    static const A21BodySequenceStep top_swipe_forward_sequence[] = {
++        {1150, 760, 980, 120, 0, 255, 180, true, false},
++        {-650, 540, 880, 90, 0, 180, 255, true, false},
++        {0, 0, 760, 0, 0, 80, 160, true, true},
++    };
++    static const A21BodySequenceStep top_swipe_backward_sequence[] = {
++        {-1150, 300, 980, 120, 160, 0, 255, true, false},
++        {650, 480, 880, 90, 0, 180, 255, true, false},
++        {0, 0, 760, 0, 0, 80, 160, true, true},
++    };
++    static const A21BodySequenceStep barge_in_sequence[] = {
++        {0, 250, 980, 45, 160, 36, 0, true, false},
++        {0, 0, 760, 0, 80, 30, 0, true, true},
++    };
++    static const A21BodySequenceStep fallback_sequence[] = {
++        {0, 0, 0, 0, 0, 120, 180, false, false},
++    };
++
++#define A21_SEQUENCE(seq) A21BodySequence{seq, sizeof(seq) / sizeof((seq)[0])}
++    if (name == nullptr) {
++        return A21_SEQUENCE(fallback_sequence);
++    }
++    if (strcmp(name, "attention") == 0) {
++        return A21_SEQUENCE(attention_sequence);
++    }
++    if (strcmp(name, "listening") == 0) {
++        return A21_SEQUENCE(listening_sequence);
++    }
++    if (strcmp(name, "thinking") == 0) {
++        return A21_SEQUENCE(thinking_sequence);
++    }
++    if (strcmp(name, "speaking") == 0) {
++        return A21_SEQUENCE(speaking_sequence);
++    }
++    if (strcmp(name, "screen_tap") == 0) {
++        return A21_SEQUENCE(screen_tap_sequence);
++    }
++    if (strcmp(name, "top_tap") == 0) {
++        return A21_SEQUENCE(top_tap_sequence);
++    }
++    if (strcmp(name, "top_swipe_forward") == 0) {
++        return A21_SEQUENCE(top_swipe_forward_sequence);
++    }
++    if (strcmp(name, "top_swipe_backward") == 0) {
++        return A21_SEQUENCE(top_swipe_backward_sequence);
++    }
++    if (strcmp(name, "screen_barge_in") == 0 || strcmp(name, "top_barge_in") == 0) {
++        return A21_SEQUENCE(barge_in_sequence);
++    }
++    return A21_SEQUENCE(fallback_sequence);
++#undef A21_SEQUENCE
++}
++
++static void a21_apply_body_sequence_step(const A21BodySequenceStep& step) {
++    LvglLockGuard lock;
++    auto& stackchan = GetStackChan();
++    stackchan.leftNeonLight().setColor(step.red, step.green, step.blue);
++    stackchan.rightNeonLight().setColor(step.red, step.green, step.blue);
++    if (!step.move_head) {
++        return;
++    }
++    auto& motion = stackchan.motion();
++    if (motion.isModifyLocked()) {
++        return;
++    }
++    if (step.go_home) {
++        motion.goHome(step.speed);
++        return;
++    }
++    motion.moveWithSpeed(step.yaw, step.pitch, step.speed);
++}
++
++static void a21_run_body_sequence(const char* name) {
++    auto sequence = a21_select_body_sequence(name);
++    for (size_t i = 0; i < sequence.count; ++i) {
++        a21_apply_body_sequence_step(sequence.steps[i]);
++        if (sequence.steps[i].hold_ms > 0) {
++            vTaskDelay(pdMS_TO_TICKS(sequence.steps[i].hold_ms));
++        }
++    }
++    auto state = Application::GetInstance().GetDeviceState();
++    if (state == kDeviceStateListening || state == kDeviceStateSpeaking) {
++        Board::GetInstance().GetLed()->OnStateChanged();
++    }
++}
++
++static void a21_body_sequence_task(void* param) {
++    const char* name = static_cast<const char*>(param);
++    a21_run_body_sequence(name);
++    vTaskDelete(NULL);
++}
++#endif
++
 +void Application::ApplyA21TouchLocalFeedback(const char* touch) {
 +#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
 +    if (touch == nullptr) {
 +        return;
 +    }
-+
-+    uint8_t red = 0;
-+    uint8_t green = 160;
-+    uint8_t blue = 255;
-+    int32_t yaw = 0;
-+    int32_t pitch = 720;
-+    int speed = 760;
-+    bool move_head = true;
-+
-+    if (strcmp(touch, "screen_barge_in") == 0 || strcmp(touch, "top_barge_in") == 0) {
-+        red = 255;
-+        green = 72;
-+        blue = 0;
-+        pitch = 360;
-+        speed = 900;
-+    } else if (strcmp(touch, "top_swipe_forward") == 0) {
-+        red = 0;
-+        green = 255;
-+        blue = 180;
-+        yaw = 900;
-+        pitch = 760;
-+        speed = 950;
-+    } else if (strcmp(touch, "top_swipe_backward") == 0) {
-+        red = 160;
-+        green = 0;
-+        blue = 255;
-+        yaw = -900;
-+        pitch = 360;
-+        speed = 950;
-+    } else if (strcmp(touch, "top_tap") == 0) {
-+        red = 0;
-+        green = 180;
-+        blue = 255;
-+        pitch = 820;
-+        speed = 850;
-+    } else if (strcmp(touch, "screen_tap") != 0) {
-+        move_head = false;
-+    }
-+
-+    {
-+        LvglLockGuard lock;
-+        auto& stackchan = GetStackChan();
-+        stackchan.leftNeonLight().setColor(red, green, blue);
-+        stackchan.rightNeonLight().setColor(red, green, blue);
-+        if (move_head) {
-+            auto& motion = stackchan.motion();
-+            if (!motion.isModifyLocked()) {
-+                motion.moveWithSpeed(yaw, pitch, speed);
-+            }
-+        }
++    if (xTaskCreatePinnedToCore(a21_body_sequence_task, "a21_body_seq", 4096, const_cast<char*>(touch), 2, NULL, 1) != pdPASS) {
++        ESP_LOGW(TAG, "A21 body sequence task spawn failed for %s", touch);
++        a21_run_body_sequence(touch);
 +    }
 +    audio_service_.PlaySound(Lang::Sounds::OGG_VIBRATION);
 +#else
@@ -514,14 +756,25 @@ index 3b6f07e..ffbf932 100644
 +
 +void Application::HandleA21ScreenTouchEvent() {
 +#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
-+    const char* touch = GetDeviceState() == kDeviceStateSpeaking ? "screen_barge_in" : "screen_tap";
-+    ApplyA21TouchLocalFeedback(touch);
-+    if (!protocol_) {
++    auto state = GetDeviceState();
++    if (state == kDeviceStateSpeaking) {
++        if (protocol_) {
++            protocol_->SendA21TouchEvent("screen_barge_in", "screen");
++        }
++        AbortSpeaking(kAbortReasonNone);
++        ApplyA21TouchLocalFeedback("screen_barge_in");
 +        return;
 +    }
-+    if (GetDeviceState() == kDeviceStateSpeaking) {
-+        protocol_->SendA21TouchEvent("screen_barge_in", "screen");
-+        AbortSpeaking(kAbortReasonNone);
++    if (state == kDeviceStateIdle) {
++        if (protocol_) {
++            protocol_->SendA21TouchEvent("screen_tap", "screen");
++        }
++        StartA21TouchListening();
++        ApplyA21TouchLocalFeedback("screen_tap");
++        return;
++    }
++    ApplyA21TouchLocalFeedback("screen_tap");
++    if (!protocol_) {
 +        return;
 +    }
 +    protocol_->SendA21TouchEvent("screen_tap", "screen");
@@ -550,9 +803,9 @@ index 3b6f07e..ffbf932 100644
 +                return;
 +            }
 +            if (GetDeviceState() == kDeviceStateSpeaking) {
-+                ApplyA21TouchLocalFeedback("top_barge_in");
 +                protocol_->SendA21TouchEvent("top_barge_in", "top_sensor");
 +                AbortSpeaking(kAbortReasonNone);
++                ApplyA21TouchLocalFeedback("top_barge_in");
 +                return;
 +            }
 +            ApplyA21TouchLocalFeedback("top_tap");
@@ -576,6 +829,7 @@ index 3b6f07e..ffbf932 100644
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
 +                    a21_playback_ack_sent_ = false;
 +                    a21_playback_stop_ack_sent_ = false;
++                    CancelA21PostTTSBreathWindow();
 +#endif
                      aborted_ = false;
                      SetDeviceState(kDeviceStateSpeaking);
@@ -596,11 +850,13 @@ index 3b6f07e..ffbf932 100644
 +                        audio_service_.ResetDecoder();
 +                    }
 +#endif
++                    bool a21_arm_post_tts_breath = false;
                      if (GetDeviceState() == kDeviceStateSpeaking) {
                          if (listening_mode_ == kListeningModeManualStop) {
                              SetDeviceState(kDeviceStateIdle);
 @@ -537,6 +754,14 @@ void Application::InitializeProtocol() {
                              SetDeviceState(kDeviceStateListening);
++                            a21_arm_post_tts_breath = !a21_force_clear_playback;
                          }
                      }
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
@@ -611,6 +867,9 @@ index 3b6f07e..ffbf932 100644
 +                    }
 +                    a21_playback_ack_sent_ = false;
 +#endif
++                    if (a21_arm_post_tts_breath) {
++                        ArmA21PostTTSBreathWindow();
++                    }
                  });
              } else if (strcmp(state->valuestring, "sentence_start") == 0) {
                  auto text = cJSON_GetObjectItem(root, "text");
@@ -700,14 +959,20 @@ index 7ca7af4..e21a111 100644
 +    bool a21_head_touch_swiped_ = false;
 +    std::atomic_bool a21_playback_ack_sent_{false};
 +    std::atomic_bool a21_playback_stop_ack_sent_{false};
++    std::atomic_bool a21_post_tts_breath_active_{false};
++    std::atomic_bool a21_vad_speaking_{false};
++    esp_timer_handle_t a21_post_tts_breath_timer_handle_ = nullptr;
      int clock_ticks_ = 0;
      TaskHandle_t activation_task_handle_ = nullptr;
 
-@@ -155,6 +163,10 @@ private:
+@@ -155,6 +163,13 @@ private:
      void HandleWakeWordDetectedEvent();
      void ContinueOpenAudioChannel(ListeningMode mode);
      void ContinueWakeWordInvoke(const std::string& wake_word);
 +    void EnsureA21ControlChannel();
++    void ArmA21PostTTSBreathWindow();
++    void CancelA21PostTTSBreathWindow();
++    void StartA21TouchListening();
 +    void ApplyA21TouchLocalFeedback(const char* touch);
 +    void HandleA21ScreenTouchEvent();
 +    void HandleA21HeadPetGesture(HeadPetGesture gesture);
@@ -1029,7 +1294,7 @@ index f0cc034..bc457f2 100644
      websocket_.reset();
  }
 
-@@ -210,6 +251,13 @@ std::string WebsocketProtocol::GetHelloMessage() {
+@@ -210,6 +251,15 @@ std::string WebsocketProtocol::GetHelloMessage() {
      cJSON_AddBoolToObject(features, "aec", true);
  #endif
      cJSON_AddBoolToObject(features, "mcp", true);
@@ -1045,7 +1310,7 @@ index f0cc034..bc457f2 100644
      cJSON_AddItemToObject(root, "features", features);
      cJSON_AddStringToObject(root, "transport", "websocket");
      cJSON* audio_params = cJSON_CreateObject();
-@@ -238,6 +286,52 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
+@@ -238,6 +286,58 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
          ESP_LOGI(TAG, "Session ID: %s", session_id_.c_str());
      }
 

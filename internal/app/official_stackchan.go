@@ -171,6 +171,7 @@ type stackChanOfficialXiaozhiCompatibleNVSOptions struct {
 	WebSocketVersion int
 	WiFiSSID         string
 	WiFiPassword     string
+	FirstBootConfig  bool
 	Confirm          string
 	Execute          bool
 }
@@ -358,6 +359,9 @@ type stackChanOfficialXiaozhiCompatibleNVSSafety struct {
 	OnlyMutatesXiaozhiConnectionKeys  bool `json:"only_mutates_xiaozhi_connection_keys"`
 	PreservesWiFiCredentials          bool `json:"preserves_wifi_credentials"`
 	AllowsExplicitWiFiCredentialWrite bool `json:"allows_explicit_wifi_credential_write"`
+	FirstBootConfigMode               bool `json:"first_boot_config_mode"`
+	ClearsWiFiCredentialsForFirstBoot bool `json:"clears_wifi_credentials_for_first_boot"`
+	ClearsAppConfigForFirstBoot       bool `json:"clears_app_config_for_first_boot"`
 	ReportRedactsValues               bool `json:"report_redacts_values"`
 }
 
@@ -368,7 +372,9 @@ type stackChanOfficialXiaozhiCompatibleNVSSummary struct {
 	ServoCalibrationPresent      bool `json:"servo_calibration_present"`
 	WiFiCredentialsPreserved     bool `json:"wifi_credentials_preserved"`
 	WiFiCredentialsWritten       bool `json:"wifi_credentials_written"`
+	WiFiCredentialsCleared       bool `json:"wifi_credentials_cleared"`
 	AppConfigMarkedConfigured    bool `json:"app_config_marked_configured"`
+	AppConfigCleared             bool `json:"app_config_cleared"`
 }
 
 type officialStackChanProductLaneArtifactEvidence struct {
@@ -999,6 +1005,7 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 		WebSocketURL:     strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WEBSOCKET_URL")),
 		WiFiSSID:         strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_SSID")),
 		WiFiPassword:     strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_PASSWORD")),
+		FirstBootConfig:  strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_FIRST_BOOT_CONFIG")) == "1" || strings.EqualFold(strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_FIRST_BOOT_CONFIG")), "true"),
 		WebSocketVersion: 1,
 		Execute:          execute,
 	}
@@ -1014,7 +1021,7 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-nvs --port /dev/cu.usbmodemXXXX --ota-url http://LAN:21080/xiaozhi/ota/ --websocket-url ws://LAN:21080/v1/xiaozhi [--websocket-version 1] [--wifi-ssid SSID --wifi-password PASSWORD] [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS] [--idf-export /path/to/export.sh] [--idf-python /path/to/python] [--run-dir .a21-run/firmware/official-xiaozhi-compatible-nvs] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-nvs --port /dev/cu.usbmodemXXXX --ota-url http://LAN:21080/xiaozhi/ota/ --websocket-url ws://LAN:21080/v1/xiaozhi [--websocket-version 1] [--wifi-ssid SSID --wifi-password PASSWORD | --first-boot-config] [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS] [--idf-export /path/to/export.sh] [--idf-python /path/to/python] [--run-dir .a21-run/firmware/official-xiaozhi-compatible-nvs] [--output-dir reports]")
 			return 0
 		case "--idf-export":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1084,6 +1091,8 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 			}
 			i++
 			options.WiFiPassword = strings.TrimSpace(args[i])
+		case "--first-boot-config":
+			options.FirstBootConfig = true
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -1582,6 +1591,9 @@ func buildStackChanOfficialXiaozhiCompatibleNVSReport(options stackChanOfficialX
 	if err != nil {
 		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
 	}
+	if options.FirstBootConfig && wifiCredentialsRequested {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, fmt.Errorf("--first-boot-config cannot be combined with --wifi-ssid/--wifi-password")
+	}
 	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
 		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
 	}
@@ -1620,9 +1632,12 @@ func buildStackChanOfficialXiaozhiCompatibleNVSReport(options stackChanOfficialX
 		Safety: stackChanOfficialXiaozhiCompatibleNVSSafety{
 			BackupBeforeWrite:                 true,
 			PreserveExistingEntries:           true,
-			OnlyMutatesXiaozhiConnectionKeys:  true,
-			PreservesWiFiCredentials:          !wifiCredentialsRequested,
+			OnlyMutatesXiaozhiConnectionKeys:  !wifiCredentialsRequested && !options.FirstBootConfig,
+			PreservesWiFiCredentials:          !wifiCredentialsRequested && !options.FirstBootConfig,
 			AllowsExplicitWiFiCredentialWrite: wifiCredentialsRequested,
+			FirstBootConfigMode:               options.FirstBootConfig,
+			ClearsWiFiCredentialsForFirstBoot: options.FirstBootConfig,
+			ClearsAppConfigForFirstBoot:       options.FirstBootConfig,
 			ReportRedactsValues:               true,
 		},
 		Tools: stackChanOfficialPCMBridgeNVSTools{
@@ -2287,12 +2302,15 @@ func writeOfficialPCMBridgeNVSCSV(writer io.Writer, entries []stackChanNVSMinima
 	return summary, nil
 }
 
-func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanNVSMinimalEntry, otaURL string, websocketURL string, websocketVersion int, wifiSSID string, wifiPassword string) (stackChanOfficialXiaozhiCompatibleNVSSummary, error) {
+func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanNVSMinimalEntry, otaURL string, websocketURL string, websocketVersion int, wifiSSID string, wifiPassword string, firstBootConfig bool) (stackChanOfficialXiaozhiCompatibleNVSSummary, error) {
 	csvWriter := csv.NewWriter(writer)
 	if err := csvWriter.Write([]string{"key", "type", "encoding", "value"}); err != nil {
 		return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
 	}
 	wifiCredentialsRequested := strings.TrimSpace(wifiSSID) != "" || strings.TrimSpace(wifiPassword) != ""
+	if firstBootConfig && wifiCredentialsRequested {
+		return stackChanOfficialXiaozhiCompatibleNVSSummary{}, fmt.Errorf("first-boot config cannot write Wi-Fi credentials")
+	}
 
 	namespaceOrder := make([]string, 0)
 	seenNamespaces := make(map[string]bool)
@@ -2307,8 +2325,14 @@ func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanN
 		if namespace == "" || key == "" {
 			continue
 		}
-		if isOfficialXiaozhiConnectionNVSKey(namespace, key) {
+		if isOfficialXiaozhiConnectionNVSKey(namespace, key) || (firstBootConfig && isOfficialXiaozhiFirstBootResetNVSKey(namespace, key)) {
 			summary.ExistingConnectionEntryCount += 1
+			if firstBootConfig && namespace == "wifi" && (key == "ssid" || key == "password") {
+				summary.WiFiCredentialsCleared = true
+			}
+			if firstBootConfig && namespace == "app_config" && key == "is_configed" {
+				summary.AppConfigCleared = true
+			}
 			continue
 		}
 		encoding, err := nvsCSVEncoding(entry.Encoding)
@@ -2331,7 +2355,7 @@ func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanN
 			}
 		}
 	}
-	summary.WiFiCredentialsPreserved = !wifiCredentialsRequested && hasNVSEntry(entries, "wifi", "ssid") && hasNVSEntry(entries, "wifi", "password")
+	summary.WiFiCredentialsPreserved = !firstBootConfig && !wifiCredentialsRequested && hasNVSEntry(entries, "wifi", "ssid") && hasNVSEntry(entries, "wifi", "password")
 	appConfigShouldMarkConfigured := wifiCredentialsRequested || summary.WiFiCredentialsPreserved
 	for _, namespace := range []string{"wifi", "websocket"} {
 		if !seenNamespaces[namespace] {
@@ -2417,6 +2441,11 @@ func isOfficialXiaozhiConnectionNVSKey(namespace string, key string) bool {
 	}
 }
 
+func isOfficialXiaozhiFirstBootResetNVSKey(namespace string, key string) bool {
+	return (namespace == "wifi" && (key == "ssid" || key == "password")) ||
+		(namespace == "app_config" && key == "is_configed")
+}
+
 func hasNVSEntry(entries []stackChanNVSMinimalEntry, namespace string, key string) bool {
 	for _, entry := range entries {
 		if entry.IsEmpty || entry.State != "Written" {
@@ -2490,12 +2519,20 @@ func verifyOfficialPCMBridgeNVSProvision(path string, deviceID string, audioWSUR
 	return nil
 }
 
-func verifyOfficialXiaozhiCompatibleNVSProvision(path string, otaURL string, websocketURL string, websocketVersion int, wifiSSID string, wifiPassword string) error {
+func verifyOfficialXiaozhiCompatibleNVSProvision(path string, otaURL string, websocketURL string, websocketVersion int, wifiSSID string, wifiPassword string, firstBootConfig bool) error {
 	entries, err := readStackChanNVSMinimalEntries(path)
 	if err != nil {
 		return err
 	}
 	wifiCredentialsRequested := strings.TrimSpace(wifiSSID) != "" || strings.TrimSpace(wifiPassword) != ""
+	if firstBootConfig {
+		if hasNVSEntry(entries, "wifi", "ssid") || hasNVSEntry(entries, "wifi", "password") {
+			return fmt.Errorf("first-boot provisioned NVS must clear wifi credentials")
+		}
+		if hasNVSEntry(entries, "app_config", "is_configed") {
+			return fmt.Errorf("first-boot provisioned NVS must leave app_config/is_configed unset")
+		}
+	}
 	if wifiCredentialsRequested {
 		if !nvsEntryEquals(entries, "wifi", "ssid", strings.TrimSpace(wifiSSID)) {
 			return fmt.Errorf("provisioned NVS missing wifi/ssid")
@@ -2770,7 +2807,7 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	if err != nil {
 		return fmt.Errorf("create NVS provision CSV: %w", err)
 	}
-	summary, csvErr := writeOfficialXiaozhiCompatibleNVSCSV(csvFile, entries, options.OTAURL, options.WebSocketURL, options.WebSocketVersion, options.WiFiSSID, options.WiFiPassword)
+	summary, csvErr := writeOfficialXiaozhiCompatibleNVSCSV(csvFile, entries, options.OTAURL, options.WebSocketURL, options.WebSocketVersion, options.WiFiSSID, options.WiFiPassword, options.FirstBootConfig)
 	closeErr := csvFile.Close()
 	if csvErr != nil {
 		return csvErr
@@ -2807,7 +2844,7 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.VerifyLogPath, verifyScript); err != nil {
 		return fmt.Errorf("verify provisioned NVS partition: %w", err)
 	}
-	if err := verifyOfficialXiaozhiCompatibleNVSProvision(afterJSONPath, options.OTAURL, options.WebSocketURL, options.WebSocketVersion, options.WiFiSSID, options.WiFiPassword); err != nil {
+	if err := verifyOfficialXiaozhiCompatibleNVSProvision(afterJSONPath, options.OTAURL, options.WebSocketURL, options.WebSocketVersion, options.WiFiSSID, options.WiFiPassword, options.FirstBootConfig); err != nil {
 		return err
 	}
 
