@@ -3,6 +3,39 @@
 Status: active state document.
 Last updated: 2026-06-06.
 
+Latest Wi-Fi provisioning punch-through update, 2026-06-06 16:08 CST:
+
+- Completed `T-A21-STACKCHAN-OFFICIAL-WIFI-PROVISIONING-PUNCHTHROUGH-001`
+  through the Gateway/build/deploy boundary.
+- Gateway now exposes official StackChan account/device-data compatibility
+  endpoints: `GET /stackChan/device/user`, `GET /stackChan/device/info`, and
+  `POST /stackChan/device/unbind`.
+- `GET /stackChan/device/info` accepts `device_id`, `deviceId`, or `id` and
+  returns the requested device ID, including `441BF6E26A60`.
+- The official-compatible product overlay now routes official account HTTP
+  calls through the A21 Gateway base URL derived from the configured Xiaozhi
+  server URL, converting `ws/wss` to `http/https`.
+- The official-compatible NVS tool now has explicit first-user provisioning
+  mode via `--first-boot-config` /
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_FIRST_BOOT_CONFIG=1`; this clears
+  stale Wi-Fi and leaves `app_config/is_configed` unset so official
+  BLE/mobile setup owns first connection.
+- Local verification passed: focused Gateway/App tests, `git diff --check`,
+  and `GOMAXPROCS=2 make verify`.
+- Product firmware build passed without flashing. Current app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `44a5450858da49399a2eacee93db94214acd0c3f7bedd13efe42ec783086e910`.
+- ECS `47.103.57.217` is deployed at commit `1c53af9` through Cloud Assistant
+  over the 5080lab SOCKS path. Remote SHA verification, focused tests, Go
+  build, `/opt/a21.next` safe swap, and `a21-gateway` restart passed.
+- Public 5080lab smoke passed for `/healthz`, all `/stackChan/device/*`
+  endpoints, ID aliases, and `/xiaozhi/ota/`.
+- Physical device app flash and first-boot NVS execution are still pending:
+  this Mac had no `/dev/cu.usbmodem*` serial device at 16:08 CST. Latest known
+  executed official-compatible app flash remains 2026-06-05 16:33 with app
+  SHA-256 `5968211923f788666e08bca51740e691dd17ae36d2535d8c265ced73d3abbf23`,
+  so a device still running that app may not include today's account URL patch.
+
 Latest endpoint voice/RGB/touch repair update, 2026-06-06 15:24 CST:
 
 - Implemented the next endpoint product-feel repair slice in the

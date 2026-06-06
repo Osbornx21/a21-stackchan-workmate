@@ -22086,3 +22086,101 @@ Forbidden actions avoided:
 - No firmware flash, no NVS write, no provider/V21 execution, no generic
   product flash lane, no Git prune/gc, and no rollback of internal-test3
   voice/protocol changes.
+
+## 2026-06-06 16:08 CST - Official Wi-Fi Provisioning Gateway Punch-Through
+
+Round goal:
+
+- Make the official StackChan no-preloaded-Wi-Fi provisioning path stop failing
+  at device data processing and preserve the internal-test4 preloaded Wi-Fi
+  floor.
+
+Actual completed work:
+
+- Implemented and deployed official StackChan compatibility endpoints on A21
+  Gateway: `GET /stackChan/device/user`, `GET /stackChan/device/info`, and
+  `POST /stackChan/device/unbind`.
+- Extended `device/info` to accept `device_id`, `deviceId`, or `id`, returning
+  the requested device ID such as `441BF6E26A60`.
+- Patched the official-compatible firmware overlay so official account HTTP
+  calls derive their base URL from the configured A21 Xiaozhi server URL and
+  no longer point at the old M5 official device-data host.
+- Added first-user provisioning support to the official-compatible NVS tool:
+  `--first-boot-config` clears stale Wi-Fi and leaves `app_config/is_configed`
+  unset while still provisioning A21 OTA/WS endpoints.
+- Built the official-compatible product app candidate with the account URL
+  overlay. Artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `44a5450858da49399a2eacee93db94214acd0c3f7bedd13efe42ec783086e910`.
+- Deployed commit `1c53af9` to ECS `47.103.57.217` through Aliyun Cloud
+  Assistant over the existing 5080lab SOCKS path. Remote archive SHA-256 was
+  verified as `c00cebc9949a13a13d7fdad2c76a34cf9c247d2f5ab8dd7d70e9686291c917b6`,
+  remote focused tests/build passed, `/opt/a21.next` safe swap completed, and
+  `a21-gateway` restarted active.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `Makefile`
+- `docs/plans/2026-06-06-stackchan-official-wifi-provisioning-punchthrough.md`
+- `docs/engineering/FIRMWARE_RELEASE_DISCIPLINE.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused Gateway device-data tests passed.
+- Focused App overlay/NVS tests passed.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build` passed.
+- ECS remote focused tests and `go build -o /opt/a21.next/bin/a21 ./cmd/a21`
+  passed.
+- ECS loopback smoke passed for `/healthz`,
+  `/stackChan/device/user`,
+  `/stackChan/device/info?device_id=441BF6E26A60`,
+  `/stackChan/device/info?deviceId=441BF6E26A60`,
+  `/stackChan/device/info?id=441BF6E26A60`, and
+  `POST /stackChan/device/unbind`.
+- 5080lab public smoke passed for `/healthz`, all three device-info ID query
+  variants, `user`, `unbind`, and `/xiaozhi/ota/`.
+
+Runtime or physical evidence:
+
+- Public Gateway now returns parser-compatible official StackChan device-data
+  JSON and the Xiaozhi OTA URL `ws://47.103.57.217/v1/xiaozhi`.
+- No physical app flash or NVS write occurred in this round because no
+  `/dev/cu.usbmodem*` product serial device was present at 16:08 CST.
+
+Known risks/blockers:
+
+- A product device still running the latest known flashed official-compatible
+  app from 2026-06-05 16:33, SHA-256
+  `5968211923f788666e08bca51740e691dd17ae36d2535d8c265ced73d3abbf23`, may not
+  include today's account URL patch. The new app candidate
+  `44a5450858da49399a2eacee93db94214acd0c3f7bedd13efe42ec783086e910` must be
+  flashed through the guarded product lane before claiming full physical
+  provisioning closure.
+- To test true "user receives device with no preloaded Wi-Fi", execute the
+  guarded official-compatible NVS lane with
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_FIRST_BOOT_CONFIG=1` after the
+  product serial device is connected.
+
+Recommended next action:
+
+- Connect the product StackChan over USB, run the guarded
+  `a21-stackchan-official-xiaozhi-compatible-flash-plan/execute` using the
+  current build artifact, then run either first-boot NVS execution for a clean
+  provisioning test or foreground App binding directly if the device is already
+  on `Ready to configure`.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no unguarded flash, no NVS write
+  without serial/confirmation, no provider/V21 execution, no provider key in
+  firmware, no Git prune/gc, and no rollback of internal-test3/internal-test4
+  behavior.

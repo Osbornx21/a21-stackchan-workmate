@@ -50,3 +50,24 @@ Date: 2026-06-06
 - `GOMAXPROCS=2 make verify` passes.
 - No flash, no NVS write, no provider key in firmware, no prune/gc, and no
   rollback of internal-test3/internal-test4 behavior.
+
+## Result Update - 2026-06-06 16:08 CST
+
+- Gateway compatibility endpoints are implemented and deployed to ECS
+  `47.103.57.217` at commit `1c53af9`.
+- Public 5080lab smoke passed:
+  `/stackChan/device/user`, `/stackChan/device/info?device_id=441BF6E26A60`,
+  `/stackChan/device/info?deviceId=441BF6E26A60`,
+  `/stackChan/device/info?id=441BF6E26A60`,
+  `POST /stackChan/device/unbind`, and `/xiaozhi/ota/`.
+- ECS deploy used the existing Cloud Assistant over 5080lab SOCKS path,
+  SHA-verified source archive
+  `c00cebc9949a13a13d7fdad2c76a34cf9c247d2f5ab8dd7d70e9686291c917b6`,
+  remote focused tests, remote Go build, `/opt/a21.next` safe swap, and
+  `a21-gateway` restart.
+- Product app build with the account URL overlay passed earlier in this
+  transition. Artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  app SHA-256 `44a5450858da49399a2eacee93db94214acd0c3f7bedd13efe42ec783086e910`.
+- Physical app flash and first-boot NVS execution remain pending because no
+  `/dev/cu.usbmodem*` product serial device was present at 16:08 CST.
